@@ -43,8 +43,22 @@
         #settings-drawer { transition: transform 0.3s ease-in-out; }
         #drawer-overlay { transition: opacity 0.3s ease-in-out; }
         
-        /* Video Object Fit */
-        video { object-fit: cover; width: 100%; height: 100%; transform: scaleX(-1); /* Espelho */ }
+        /* Video Styles */
+        video { object-fit: cover; width: 100%; height: 100%; transform: scaleX(-1); }
+        video.screen-share { object-fit: contain; transform: scaleX(1); background: #000; }
+
+        /* Theater Mode Fallback (CSS Fullscreen) */
+        .theater-mode {
+            position: fixed !important;
+            top: 0; left: 0; right: 0; bottom: 0;
+            z-index: 1000;
+            background: #000;
+            border-radius: 0 !important;
+            border: none !important;
+        }
+        .theater-mode video {
+            object-fit: contain;
+        }
     </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen overflow-x-hidden flex flex-col">
@@ -222,13 +236,16 @@
                 </button>
                 <div class="h-8 w-[1px] bg-slate-700 hidden" id="speaker-separator"></div>
 
-                <button id="toggle-mic-btn" class="p-4 rounded-full transition-all bg-slate-700 hover:bg-slate-600 text-white relative group shadow-lg shadow-indigo-900/20">
+                <button id="toggle-mic-btn" class="p-4 rounded-full transition-all bg-slate-700 hover:bg-slate-600 text-white relative group shadow-lg shadow-indigo-900/20" title="Microfone">
                     <i data-lucide="mic" class="w-6 h-6"></i>
                 </button>
                 
-                <!-- Botão de Câmara -->
-                <button id="toggle-video-btn" class="p-4 rounded-full transition-all bg-slate-700 hover:bg-slate-600 text-white relative group shadow-lg shadow-indigo-900/20">
+                <button id="toggle-video-btn" class="p-4 rounded-full transition-all bg-slate-700 hover:bg-slate-600 text-white relative group shadow-lg shadow-indigo-900/20" title="Câmara">
                     <i data-lucide="video-off" class="w-6 h-6"></i>
+                </button>
+
+                <button id="share-screen-btn" class="p-4 rounded-full transition-all bg-slate-700 hover:bg-slate-600 text-white relative group shadow-lg shadow-indigo-900/20" title="Partilhar Ecrã">
+                    <i data-lucide="monitor-up" class="w-6 h-6"></i>
                 </button>
 
                 <div class="h-8 w-[1px] bg-slate-700"></div>
@@ -272,16 +289,17 @@
         let prevParticipantsCount = 0;
         let isSpeakerOn = true;
         let currentAudioOutputId = 'default';
+        let isScreenSharing = false;
         
         let localStream = null;
-        let processedStream = null; // Stream de Áudio Processado
+        let processedStream = null;
         let peerConnections = {}; 
         let audioContext = null;
         let audioAnalysers = {}; 
         let gateGainNode = null; 
         let animationFrameId = null;
         let speechHoldTimer = null;
-        let remoteStreams = {}; // { userId: MediaStream } (Áudio + Vídeo Remotos)
+        let remoteStreams = {}; 
 
         let unsubRoom = null;
         let unsubParticipants = null;
@@ -320,6 +338,7 @@
             footerLeaveBtn: document.getElementById('footer-leave-btn'),
             toggleMicBtn: document.getElementById('toggle-mic-btn'),
             toggleVideoBtn: document.getElementById('toggle-video-btn'),
+            shareScreenBtn: document.getElementById('share-screen-btn'),
             speakerBtn: document.getElementById('speaker-btn'),
             speakerSeparator: document.getElementById('speaker-separator'),
             toast: document.getElementById('toast'),
@@ -340,6 +359,27 @@
             els.toast.classList.remove('opacity-0');
             setTimeout(() => els.toast.classList.add('opacity-0'), 3000);
         }
+
+        // --- GLOBAL HELPER: Request Fullscreen with Fallback ---
+        window.toggleVideoFullscreen = (id, cardId) => {
+            const video = document.getElementById(id);
+            const card = document.getElementById(cardId);
+            
+            if (!video || !card) return;
+
+            // Tentar API nativa
+            const enterFullscreen = video.requestFullscreen || video.webkitRequestFullscreen || video.msRequestFullscreen || video.webkitEnterFullscreen;
+            
+            if (enterFullscreen) {
+                enterFullscreen.call(video).catch(err => {
+                    console.warn("Fullscreen nativo bloqueado/não suportado, usando modo teatro.", err);
+                    card.classList.toggle('theater-mode');
+                });
+            } else {
+                // Fallback imediato se API não existir
+                card.classList.toggle('theater-mode');
+            }
+        };
 
         // --- GHOST ROOM CLEANUP ---
         async function cleanGhostRooms() {
@@ -431,10 +471,7 @@
         async function initLocalStream(withVideo = false) {
             try {
                 await unlockAudio();
-                // Se já temos stream, paramos as tracks antigas para reconfigurar
-                if (localStream) {
-                    localStream.getTracks().forEach(t => t.stop());
-                }
+                if (localStream) localStream.getTracks().forEach(t => t.stop());
 
                 const constraints = {
                     audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
@@ -444,20 +481,17 @@
                 const raw = await navigator.mediaDevices.getUserMedia(constraints);
                 localStream = raw;
                 
-                // Configurar Grafo de Áudio (Noise Gate)
                 const source = audioContext.createMediaStreamSource(raw);
                 gateGainNode = audioContext.createGain(); gateGainNode.gain.value = 0;
                 const dest = audioContext.createMediaStreamDestination();
                 source.connect(gateGainNode); gateGainNode.connect(dest);
                 
-                // O processedStream é o que enviamos (Áudio Tratado + Vídeo Raw se houver)
                 processedStream = dest.stream;
                 if (withVideo) {
                     const videoTrack = raw.getVideoTracks()[0];
                     if (videoTrack) processedStream.addTrack(videoTrack);
                 }
 
-                // Analisador Local
                 const an = audioContext.createAnalyser(); an.fftSize=512; source.connect(an); audioAnalysers['local']=an;
                 
                 if (isSpeakerOn && 'setSinkId' in HTMLMediaElement.prototype) await updateAudioOutput();
@@ -467,10 +501,7 @@
         }
 
         function setupRemoteAudioAnalysis(id, stream) {
-            // Guardar stream remoto completo para usar no vídeo
             remoteStreams[id] = stream;
-            
-            // Ligar analisador de áudio
             const s = audioContext.createMediaStreamSource(stream);
             const a = audioContext.createAnalyser(); a.fftSize=32; s.connect(a); audioAnalysers[id]=a;
         }
@@ -538,26 +569,85 @@
             lucide.createIcons();
         }
 
-        // --- VIDEO TOGGLE & RENEGOTIATION ---
+        // --- SCREEN SHARING ---
+        async function toggleScreenShare() {
+            if (!currentUser || !currentRoomID) return;
+            if (isScreenSharing) {
+                // Parar partilha
+                isScreenSharing = false;
+                await toggleMyCamera(); // Reverte para câmara (ou desliga se estava desligada)
+                updateFooterScreenShareState(false);
+            } else {
+                // Iniciar partilha
+                try {
+                    const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+                    const screenTrack = screenStream.getVideoTracks()[0];
+                    
+                    // Se o utilizador parar a partilha pelo navegador
+                    screenTrack.onended = () => {
+                        if (isScreenSharing) toggleScreenShare(); 
+                    };
+
+                    isScreenSharing = true;
+                    updateFooterScreenShareState(true);
+
+                    // Substituir track de vídeo
+                    Object.keys(peerConnections).forEach(pid => {
+                        const pc = peerConnections[pid];
+                        const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+                        if (sender) sender.replaceTrack(screenTrack);
+                        else {
+                            pc.addTrack(screenTrack, processedStream);
+                            pc.createOffer().then(o => pc.setLocalDescription(o)).then(() => {
+                                addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomID, 'participants', pid, 'offers'), { 
+                                    offer: { type: pc.localDescription.type, sdp: pc.localDescription.sdp }, from: currentUser.uid 
+                                });
+                            });
+                        }
+                    });
+
+                    // Atualizar stream local
+                    localStream = screenStream; // Update local ref
+                    // Atualizar Firestore para indicar que é screen share (para CSS object-fit)
+                    await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomID, 'participants', currentUser.uid), { isVideoOn: true, isScreenSharing: true });
+
+                } catch (err) {
+                    console.error("Erro partilha:", err);
+                    showToast("Cancelado ou não suportado.");
+                }
+            }
+        }
+
+        function updateFooterScreenShareState(isOn) {
+            els.shareScreenBtn.className = `p-4 rounded-full transition-all text-white relative group shadow-lg ${isOn ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-slate-700 hover:bg-slate-600'}`;
+            // Mantém ícone, muda cor
+        }
+
+        // --- VIDEO TOGGLE ---
         async function toggleMyCamera() {
             if (!currentUser || !currentRoomID) return;
             const myData = participantsData.find(p => p.id === currentUser.uid);
+            
+            // Se estiver a partilhar ecrã, o toggle video deve desligar a partilha e ligar a camera (ou desligar tudo)
+            if (isScreenSharing) {
+                // Se clicar na câmara enquanto partilha, para a partilha e liga a câmara
+                isScreenSharing = false;
+                updateFooterScreenShareState(false);
+                // Continua para ligar a câmara abaixo...
+            }
+
             const newVideoState = !myData.isVideoOn;
 
-            // Se for ligar o vídeo e não tivermos track, reiniciar stream
             if (newVideoState) {
-                await initLocalStream(true); // Pede vídeo
-                // Atualizar todas as conexões peer com a nova track de vídeo
+                await initLocalStream(true);
                 const videoTrack = processedStream.getVideoTracks()[0];
                 if (videoTrack) {
                     Object.keys(peerConnections).forEach(pid => {
                         const pc = peerConnections[pid];
-                        // Adicionar track ao PC (Isso dispara negotiationneeded, mas vamos fazer manual)
                         const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
                         if (sender) sender.replaceTrack(videoTrack);
                         else {
                             pc.addTrack(videoTrack, processedStream);
-                            // Criar nova oferta para renegociar
                             pc.createOffer().then(o => pc.setLocalDescription(o)).then(() => {
                                 addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomID, 'participants', pid, 'offers'), { 
                                     offer: { type: pc.localDescription.type, sdp: pc.localDescription.sdp }, from: currentUser.uid 
@@ -567,14 +657,10 @@
                     });
                 }
             } else {
-                // Desligar vídeo: Parar track e atualizar
-                if (localStream) {
-                    localStream.getVideoTracks().forEach(t => t.stop());
-                }
-                // (Opcional) Poderíamos renegociar para remover a track, mas parar e mudar o estado visual é mais rápido
+                if (localStream) localStream.getVideoTracks().forEach(t => t.stop());
             }
 
-            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomID, 'participants', currentUser.uid), { isVideoOn: newVideoState });
+            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomID, 'participants', currentUser.uid), { isVideoOn: newVideoState, isScreenSharing: false });
             updateFooterVideoState(newVideoState);
         }
 
@@ -589,7 +675,7 @@
             const name = els.userNameInput.value.trim();
             const roomName = els.newRoomNameInput.value.trim();
             if (!name) return showToast("Nome obrigatório");
-            if (!await initLocalStream(false)) return; // Começa sem vídeo
+            if (!await initLocalStream(false)) return; 
             currentUserName = name;
             els.createRoomBtn.disabled = true; els.createRoomBtn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> A criar...`;
             try {
@@ -606,7 +692,7 @@
             const name = els.userNameInput.value.trim();
             if (!name) return showToast("Digita o teu nome primeiro!");
             if (!id) return showToast("Seleciona uma sala ou digita o código.");
-            if (!await initLocalStream(false)) return; // Começa sem vídeo
+            if (!await initLocalStream(false)) return; 
             currentUserName = name;
             els.joinRoomBtn.disabled = true;
             await joinRoomLogic(id);
@@ -617,7 +703,7 @@
             if (unsubLobby) unsubLobby(); 
             await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', id), { participantCount: increment(1) }).catch(()=>{});
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', id, 'participants', currentUser.uid), {
-                name: currentUserName, joinedAt: Date.now(), isMuted: false, isVideoOn: false, volume: 1.0
+                name: currentUserName, joinedAt: Date.now(), isMuted: false, isVideoOn: false, isScreenSharing: false, volume: 1.0
             });
             els.lobbyView.classList.add('hidden'); els.roomView.classList.remove('hidden'); els.displayRoomId.textContent = id;
             startProcessingLoop(); setupAllListeners(id);
@@ -664,26 +750,23 @@
             processedStream.getTracks().forEach(t => pc.addTrack(t, processedStream));
             pc.onicecandidate = e => { if (e.candidate) addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomID, 'participants', tid, 'candidates'), { candidate: e.candidate.toJSON(), from: currentUser.uid }); };
             pc.ontrack = e => {
-                // Áudio (Hidden)
-                let audioEl = document.getElementById(`audio-${tid}`);
-                if (!audioEl) { 
-                    audioEl=document.createElement('audio'); audioEl.id=`audio-${tid}`; audioEl.autoplay=true; audioEl.setAttribute('playsinline',''); els.audioContainer.appendChild(audioEl);
-                    if ('setSinkId' in HTMLMediaElement.prototype && currentAudioOutputId !== 'default') audioEl.setSinkId(currentAudioOutputId).catch(e=>{});
+                let el = document.getElementById(`audio-${tid}`);
+                if (!el) { 
+                    el=document.createElement('audio'); el.id=`audio-${tid}`; el.autoplay=true; el.setAttribute('playsinline',''); els.audioContainer.appendChild(el);
+                    if ('setSinkId' in HTMLMediaElement.prototype && currentAudioOutputId !== 'default') el.setSinkId(currentAudioOutputId).catch(e=>{});
                 }
-                // Se track for áudio, liga ao elemento de áudio
-                if (e.track.kind === 'audio') {
-                    audioEl.srcObject = e.streams[0]; setupRemoteAudioAnalysis(tid, e.streams[0]);
-                }
-                // Se track for vídeo, atualiza a referência para renderParticipants usar
-                if (e.track.kind === 'video') {
-                    remoteStreams[tid] = e.streams[0];
-                    renderParticipants(); // Re-renderizar para mostrar o vídeo
-                }
+                if (e.track.kind === 'audio') { el.srcObject = e.streams[0]; setupRemoteAudioAnalysis(tid, e.streams[0]); }
+                if (e.track.kind === 'video') { remoteStreams[tid] = e.streams[0]; renderParticipants(); }
             };
             if (init) pc.createOffer().then(o => pc.setLocalDescription(o)).then(() => addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomID, 'participants', tid, 'offers'), { offer: { type: pc.localDescription.type, sdp: pc.localDescription.sdp }, from: currentUser.uid }));
         }
         async function handleOffer(o, f) { if (!peerConnections[f]) createPeerConnection(f, false); await peerConnections[f].setRemoteDescription(new RTCSessionDescription(o)); const a=await peerConnections[f].createAnswer(); await peerConnections[f].setLocalDescription(a); addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomID, 'participants', f, 'answers'), { answer: { type: a.type, sdp: a.sdp }, from: currentUser.uid }); }
-        async function handleAnswer(a, f) { if (peerConnections[f]) await peerConnections[f].setRemoteDescription(new RTCSessionDescription(a)); }
+        async function handleAnswer(a, f) { 
+            const pc = peerConnections[f];
+            if (pc && pc.signalingState === "have-local-offer") {
+                 await pc.setRemoteDescription(new RTCSessionDescription(a));
+            }
+        }
         async function handleCandidate(c, f) { if (peerConnections[f]) await peerConnections[f].addIceCandidate(new RTCIceCandidate(c)); }
 
         // --- RENDER UI ---
@@ -694,6 +777,7 @@
             const myData = participantsData.find(p => p.id === currentUser.uid);
             updateFooterMicState(myData?.isMuted);
             updateFooterVideoState(myData?.isVideoOn);
+            updateFooterScreenShareState(myData?.isScreenSharing);
 
             participantsData.forEach(p => {
                 const isMe = p.id === currentUser.uid;
@@ -709,19 +793,23 @@
                     volCtrl = `<div class="w-full px-4 mt-2 relative z-20"><label class="text-[10px] text-slate-400 font-bold">Vol: ${Math.round(vol*100)}%</label><input type="range" min="0" max="1" step="0.1" value="${vol}" onchange="window.updateUserVolume('${p.id}', this.value)"></div>`;
                 }
 
+                const cardId = `participant-card-${p.id}`;
+                card.id = cardId;
                 card.className = `relative aspect-video rounded-2xl flex flex-col items-center justify-center border-2 transition-all shadow-lg overflow-hidden ${p.isMuted ? 'bg-slate-900 border-slate-800' : 'bg-slate-800 border-indigo-500/30'}`;
                 
                 let contentHTML = '';
                 
-                // VIDEO RENDER LOGIC
                 if (p.isVideoOn) {
-                    contentHTML = `<video id="video-${p.id}" autoplay playsinline muted class="absolute inset-0 w-full h-full object-cover"></video>
+                    const videoClass = p.isScreenSharing ? 'screen-share' : '';
+                    // Use listener instead of inline onclick to avoid CSP/policy errors
+                    const maximizeBtn = `<button data-video-target="video-${p.id}" data-card-target="${cardId}" class="maximize-btn absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-black/70 text-white rounded-lg backdrop-blur-sm transition-all z-20" title="Tela Cheia"><i data-lucide="maximize" class="w-4 h-4"></i></button>`;
+                    contentHTML = `<video id="video-${p.id}" autoplay playsinline muted class="absolute inset-0 w-full h-full ${videoClass}"></video>
                     <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
+                    ${maximizeBtn}
                     <div class="absolute bottom-3 left-4 right-14 text-white font-bold truncate z-10 text-sm flex items-center gap-2">
-                        ${p.name} ${isMe?'(Tu)':''}
+                        ${p.name} ${isMe?'(Tu)':''} ${p.isScreenSharing?'<span class="text-[10px] bg-indigo-600 px-1 rounded ml-1">Ecrã</span>':''}
                     </div>`;
                 } else {
-                    // AVATAR RENDER LOGIC
                     contentHTML = `${globalMuteState ? '<div class="absolute top-2 left-2 px-2 py-0.5 bg-red-600/80 text-[10px] font-bold rounded text-white z-10">Silenciado</div>' : ''}
                     <div id="visual-${visualId}" class="w-16 h-16 rounded-full bg-slate-700 flex items-center justify-center text-2xl font-bold text-indigo-400 mb-1 transition-all duration-75">${(p.name||'?').charAt(0).toUpperCase()}</div>
                     <div class="text-center z-10 w-full"><div class="font-medium flex items-center justify-center gap-1 text-slate-200">${p.name} ${isMe ? '<span class="text-[10px] bg-slate-700 px-1.5 py-0.5 rounded uppercase font-bold text-slate-300">Tu</span>' : ''} ${isFirst ? '<i data-lucide="crown" class="w-3 h-3 text-yellow-500 ml-1"></i>' : ''}</div>${volCtrl}</div>`;
@@ -730,7 +818,6 @@
                 card.innerHTML = contentHTML + `<div class="absolute bottom-3 right-3 p-1.5 rounded-full ${micClass} z-20 shadow-md backdrop-blur-sm">${micIcon}</div>`;
                 els.participantsGrid.appendChild(card);
 
-                // ATTACH VIDEO STREAM AFTER RENDER
                 if (p.isVideoOn) {
                     const videoEl = document.getElementById(`video-${p.id}`);
                     if (videoEl) {
@@ -786,6 +873,7 @@
         els.retryBtn.addEventListener('click', initAuth);
         els.toggleMicBtn.addEventListener('click', toggleMyMic);
         els.toggleVideoBtn.addEventListener('click', toggleMyCamera);
+        els.shareScreenBtn.addEventListener('click', toggleScreenShare);
         els.muteAllBtn.addEventListener('click', () => setAllMute(true));
         els.unmuteAllBtn.addEventListener('click', () => setAllMute(false));
         els.leaveBtn.addEventListener('click', () => leaveCall(false));
@@ -800,7 +888,16 @@
         document.getElementById('clean-rooms-btn').addEventListener('click', cleanGhostRooms);
         els.speakerBtn.addEventListener('click', toggleSpeaker);
         
-        // Drawer & Refresh
+        // Event delegation for Maximize buttons to avoid inline event policy errors
+        els.participantsGrid.addEventListener('click', (e) => {
+            const btn = e.target.closest('.maximize-btn');
+            if (btn) {
+                const videoId = btn.dataset.videoTarget;
+                const cardId = btn.dataset.cardTarget;
+                window.toggleVideoFullscreen(videoId, cardId);
+            }
+        });
+        
         const toggleDrawer = (o) => { o ? (els.drawerOverlay.classList.remove('hidden'), setTimeout(()=>els.drawerOverlay.classList.remove('opacity-0'),10), els.settingsDrawer.classList.remove('-translate-x-full')) : (els.settingsDrawer.classList.add('-translate-x-full'), els.drawerOverlay.classList.add('opacity-0'), setTimeout(()=>els.drawerOverlay.classList.add('hidden'),300)); };
         els.openSettingsBtn.addEventListener('click', () => toggleDrawer(true));
         els.closeDrawerBtn.addEventListener('click', () => toggleDrawer(false));
