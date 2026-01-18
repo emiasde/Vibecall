@@ -266,6 +266,7 @@
         let isHost = false;
         let prevParticipantsCount = 0;
         let isSpeakerOn = true; // Estado do Viva Voz
+        let currentAudioOutputId = 'default'; // Guardar ID do dispositivo de áudio
         
         let localStream = null;
         let processedStream = null;
@@ -462,6 +463,12 @@
                 source.connect(gateGainNode); gateGainNode.connect(dest);
                 processedStream = dest.stream;
                 const an = audioContext.createAnalyser(); an.fftSize=512; source.connect(an); audioAnalysers['local']=an;
+                
+                // Tentativa inicial de definir saída se já estiver em Viva Voz
+                if (isSpeakerOn && 'setSinkId' in HTMLMediaElement.prototype) {
+                    await updateAudioOutput();
+                }
+
                 return true;
             } catch (err) { alert("Erro Mic: "+err.message); return false; }
         }
@@ -514,33 +521,41 @@
         els.gateThreshold.addEventListener('input', (e) => els.thresholdMarker.style.left = `${e.target.value}%`);
 
         // --- SPEAKERPHONE LOGIC ---
+        async function updateAudioOutput() {
+            if (!('setSinkId' in HTMLMediaElement.prototype)) return;
+
+            try {
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const audioOutputs = devices.filter(d => d.kind === 'audiooutput');
+                
+                let targetId = 'default';
+                if (isSpeakerOn) {
+                    const speaker = audioOutputs.find(d => d.label.toLowerCase().includes('speaker'));
+                    if (speaker) targetId = speaker.deviceId;
+                }
+                
+                currentAudioOutputId = targetId;
+
+                const audioElements = els.audioContainer.querySelectorAll('audio');
+                for (const audio of audioElements) {
+                    if (audio.sinkId !== targetId) {
+                        await audio.setSinkId(targetId).catch(e => console.warn("Failed to set sinkId", e));
+                    }
+                }
+            } catch(e) {
+                console.error("Error updating audio output:", e);
+            }
+        }
+
         async function toggleSpeaker() {
             isSpeakerOn = !isSpeakerOn;
             const icon = isSpeakerOn ? 'volume-2' : 'phone';
             els.speakerBtn.innerHTML = `<i data-lucide="${icon}" class="w-6 h-6"></i>`;
             
-            // Tenta forçar a saída de áudio (Android/Chrome apenas)
             if ('setSinkId' in HTMLMediaElement.prototype) {
-                try {
-                    const devices = await navigator.mediaDevices.enumerateDevices();
-                    const audioOutputs = devices.filter(d => d.kind === 'audiooutput');
-                    // Tenta encontrar um device que pareça "speaker"
-                    let targetId = 'default';
-                    if (isSpeakerOn) {
-                        const speaker = audioOutputs.find(d => d.label.toLowerCase().includes('speaker'));
-                        if (speaker) targetId = speaker.deviceId;
-                    }
-                    
-                    const audioElements = els.audioContainer.querySelectorAll('audio');
-                    for (const audio of audioElements) {
-                        await audio.setSinkId(targetId);
-                    }
-                    showToast(isSpeakerOn ? "Viva Voz Ativo" : "Auricular Ativo");
-                } catch(e) {
-                    console.error("Erro ao mudar saída:", e);
-                }
+                await updateAudioOutput();
+                showToast(isSpeakerOn ? "Viva Voz Ativo" : "Auricular Ativo");
             } else if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-                // Fallback para iOS (Aviso Visual)
                 alert("No iPhone/iPad, por favor usa o Centro de Controlo ou clica no ícone de AirPlay/Som para alterar a saída.");
             } else {
                 showToast("Funcionalidade não suportada neste browser.");
@@ -636,7 +651,18 @@
             pc.onicecandidate = e => { if (e.candidate) addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomID, 'participants', tid, 'candidates'), { candidate: e.candidate.toJSON(), from: currentUser.uid }); };
             pc.ontrack = e => {
                 let el = document.getElementById(`audio-${tid}`);
-                if (!el) { el=document.createElement('audio'); el.id=`audio-${tid}`; el.autoplay=true; el.setAttribute('playsinline',''); els.audioContainer.appendChild(el); }
+                if (!el) { 
+                    el=document.createElement('audio'); 
+                    el.id=`audio-${tid}`; 
+                    el.autoplay=true; 
+                    el.setAttribute('playsinline',''); 
+                    els.audioContainer.appendChild(el); 
+                    
+                    // Aplica a saída de áudio correta ao criar o elemento
+                    if ('setSinkId' in HTMLMediaElement.prototype && currentAudioOutputId !== 'default') {
+                        el.setSinkId(currentAudioOutputId).catch(e => console.warn(e));
+                    }
+                }
                 el.srcObject = e.streams[0]; setupRemoteAudioAnalysis(tid, e.streams[0]);
             };
             if (init) pc.createOffer().then(o => pc.setLocalDescription(o)).then(() => addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomID, 'participants', tid, 'offers'), { offer: { type: pc.localDescription.type, sdp: pc.localDescription.sdp }, from: currentUser.uid }));
