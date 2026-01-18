@@ -17,13 +17,11 @@
     <style>
         body { font-family: 'Inter', sans-serif; }
         
-        /* Scrollbar personalizada */
         .custom-scroll::-webkit-scrollbar { width: 6px; }
         .custom-scroll::-webkit-scrollbar-track { background: rgba(30, 41, 59, 0.5); border-radius: 4px; }
         .custom-scroll::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
         .custom-scroll::-webkit-scrollbar-thumb:hover { background: #64748b; }
 
-        /* Animações */
         .speaking-active {
             box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7);
             animation: pulse-audio 1.5s infinite;
@@ -34,24 +32,24 @@
             100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
         }
 
-        /* Sliders */
         input[type=range] { height: 6px; -webkit-appearance: none; margin: 10px 0; width: 100%; background: #334155; border-radius: 3px; outline: none; }
         input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 16px; width: 16px; border-radius: 50%; background: #6366f1; cursor: pointer; transition: background .15s ease-in-out; border: 2px solid #1e293b; }
         input[type=range]::-webkit-slider-thumb:hover { background: #818cf8; }
 
-        /* Noise Gate UI */
         .meter-container { width: 100%; height: 12px; background-color: #1e293b; border-radius: 6px; overflow: hidden; position: relative; margin-top: 8px; }
         .meter-bar { height: 100%; width: 0%; background: linear-gradient(90deg, #22c55e 0%, #eab308 80%, #ef4444 100%); transition: width 0.05s linear; }
         .threshold-line { position: absolute; top: 0; bottom: 0; width: 2px; background-color: white; z-index: 10; box-shadow: 0 0 4px rgba(0,0,0,0.5); }
 
-        /* Drawer */
         #settings-drawer { transition: transform 0.3s ease-in-out; }
         #drawer-overlay { transition: opacity 0.3s ease-in-out; }
+        
+        /* Video Object Fit */
+        video { object-fit: cover; width: 100%; height: 100%; transform: scaleX(-1); /* Espelho */ }
     </style>
 </head>
 <body class="bg-slate-950 text-slate-100 min-h-screen overflow-x-hidden flex flex-col">
 
-    <!-- Áudios Remotos -->
+    <!-- Áudios Remotos (Invisíveis/Backstage) -->
     <div id="audio-container" class="hidden"></div>
 
     <!-- Ecrã de Carregamento -->
@@ -61,7 +59,6 @@
             <p class="text-slate-400">A ligar ao servidor...</p>
         </div>
         
-        <!-- Erro -->
         <div id="auth-error-msg" class="hidden w-full max-w-lg bg-red-950/90 border border-red-500/50 p-6 rounded-xl text-left shadow-2xl mx-4 backdrop-blur-sm">
             <h3 class="text-red-400 font-bold text-lg mb-2 flex items-center gap-2">
                 <i data-lucide="alert-triangle" class="w-5 h-5"></i> Erro de Sistema
@@ -122,7 +119,6 @@
                     <p class="text-slate-400 text-sm mt-1">Escolhe uma sala e entra na vibe.</p>
                 </div>
                 
-                <!-- User Input no Header -->
                 <div class="w-full md:w-auto relative group/input">
                     <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                         <i data-lucide="user" class="h-4 w-4 text-slate-500 group-focus-within/input:text-indigo-400 transition-colors"></i>
@@ -139,7 +135,6 @@
                         <i data-lucide="list" class="w-4 h-4"></i> Salas Disponíveis
                     </h2>
                     <div class="flex gap-2">
-                        <!-- Botão de Vassoura -->
                         <button id="clean-rooms-btn" class="p-2 text-red-400 hover:text-red-300 hover:bg-red-900/20 rounded-lg transition-colors" title="Limpar Salas Fantasma (Vazias)">
                             <i data-lucide="trash-2" class="w-4 h-4"></i>
                         </button>
@@ -149,28 +144,34 @@
                     </div>
                 </div>
 
-                <!-- Container da Lista Scrollable -->
                 <div id="rooms-list-container" class="flex-1 overflow-y-auto custom-scroll p-4 space-y-3">
-                    <!-- Loading State -->
                     <div class="text-center py-10 text-slate-500 flex flex-col items-center gap-2">
                         <i data-lucide="loader-2" class="w-6 h-6 animate-spin"></i>
                         <span>A procurar salas...</span>
                     </div>
                 </div>
 
-                <!-- Footer do Lobby: Criar Sala -->
-                <div class="p-4 bg-slate-900 border-t border-slate-800 flex flex-col sm:flex-row gap-3">
-                    <button id="create-room-btn" class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-900/20">
-                        <i data-lucide="plus-circle" class="w-5 h-5"></i>
-                        Criar Nova Sala
-                    </button>
-                    
-                    <!-- Entrada Manual (Fallback) -->
-                    <div class="flex-1 flex gap-2">
-                        <input type="text" id="room-id-input" placeholder="Código..." class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 outline-none text-white text-sm focus:border-indigo-500 font-mono uppercase">
-                        <button id="join-room-btn" class="bg-slate-800 hover:bg-slate-700 text-white px-4 rounded-xl border border-slate-700 transition-colors">
-                            <i data-lucide="arrow-right" class="w-5 h-5"></i>
+                <div class="p-4 bg-slate-900 border-t border-slate-800 flex flex-col gap-4">
+                    <div class="relative group/room-name">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i data-lucide="tag" class="h-4 w-4 text-slate-500 group-focus-within/room-name:text-indigo-400 transition-colors"></i>
+                        </div>
+                        <input type="text" id="new-room-name" placeholder="Nome da sala (Opcional)" 
+                            class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-3 pl-10 focus:ring-2 focus:ring-indigo-500/50 outline-none text-white text-sm placeholder-slate-600 transition-all">
+                    </div>
+
+                    <div class="flex flex-col sm:flex-row gap-3">
+                        <button id="create-room-btn" class="flex-1 bg-indigo-600 hover:bg-indigo-500 text-white font-bold py-3 px-4 rounded-xl flex items-center justify-center gap-2 transition-all shadow-lg shadow-indigo-900/20">
+                            <i data-lucide="plus-circle" class="w-5 h-5"></i>
+                            Criar
                         </button>
+                        
+                        <div class="flex-1 flex gap-2">
+                            <input type="text" id="room-id-input" placeholder="Código..." class="w-full bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 outline-none text-white text-sm focus:border-indigo-500 font-mono uppercase">
+                            <button id="join-room-btn" class="bg-slate-800 hover:bg-slate-700 text-white px-4 rounded-xl border border-slate-700 transition-colors">
+                                <i data-lucide="arrow-right" class="w-5 h-5"></i>
+                            </button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -178,7 +179,6 @@
 
         <!-- Room View (In-Call) -->
         <div id="room-view" class="max-w-6xl mx-auto space-y-6 hidden w-full p-4 md:p-8">
-            <!-- Barra Superior -->
             <div class="flex flex-col md:flex-row md:items-center justify-between bg-slate-900 p-4 rounded-xl border border-slate-800 gap-4 shadow-lg mb-6 relative">
                 <button id="open-settings-btn" class="absolute top-4 left-4 md:static p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition-colors border border-slate-700 shadow-lg z-10">
                     <i data-lucide="settings-2" class="w-5 h-5"></i>
@@ -189,13 +189,14 @@
                         <i data-lucide="radio" class="w-5 h-5 text-white animate-pulse"></i>
                     </div>
                     <div>
-                        <h2 class="font-bold flex items-center gap-2 text-lg">
-                            Sala: <span id="display-room-id" class="font-mono text-indigo-300"></span>
+                        <h2 class="font-bold flex items-center gap-2 text-lg text-white">
+                            <span id="display-room-name">Sala</span>
+                            <span id="display-room-id" class="font-mono text-sm bg-slate-800 text-slate-400 px-2 py-0.5 rounded border border-slate-700">ID</span>
                             <button id="copy-link-btn" class="p-1.5 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white transition-colors" title="Copiar ID">
-                                <i data-lucide="copy" class="w-4 h-4"></i>
+                                <i data-lucide="copy" class="w-3 h-3"></i>
                             </button>
                         </h2>
-                        <p class="text-xs text-slate-400"><span id="participant-count">0</span> na chamada</p>
+                        <p class="text-xs text-slate-400 mt-1"><span id="participant-count">0</span> na chamada</p>
                     </div>
                 </div>
 
@@ -216,7 +217,6 @@
 
             <!-- Rodapé Fixo -->
             <div class="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur-md border border-slate-800 px-8 py-4 rounded-full flex items-center gap-4 shadow-2xl z-40">
-                <!-- Botão Viva Voz (Aparece apenas em Mobile) -->
                 <button id="speaker-btn" class="hidden p-4 rounded-full transition-all bg-slate-700 hover:bg-slate-600 text-white relative group shadow-lg shadow-indigo-900/20" title="Alternar Viva Voz">
                     <i data-lucide="volume-2" class="w-6 h-6"></i>
                 </button>
@@ -225,6 +225,12 @@
                 <button id="toggle-mic-btn" class="p-4 rounded-full transition-all bg-slate-700 hover:bg-slate-600 text-white relative group shadow-lg shadow-indigo-900/20">
                     <i data-lucide="mic" class="w-6 h-6"></i>
                 </button>
+                
+                <!-- Botão de Câmara -->
+                <button id="toggle-video-btn" class="p-4 rounded-full transition-all bg-slate-700 hover:bg-slate-600 text-white relative group shadow-lg shadow-indigo-900/20">
+                    <i data-lucide="video-off" class="w-6 h-6"></i>
+                </button>
+
                 <div class="h-8 w-[1px] bg-slate-700"></div>
                 <button id="footer-leave-btn" class="p-4 bg-red-600 rounded-full hover:bg-red-700 transition-all text-white shadow-lg shadow-red-600/30">
                     <i data-lucide="phone-off" class="w-6 h-6"></i>
@@ -256,7 +262,6 @@
         const db = getFirestore(app);
         const appId = 'vibecall-site-live';
 
-        // WebRTC Config
         const rtcConfig = { iceServers: [{ urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] }], iceCandidatePoolSize: 10 };
 
         // Globals
@@ -265,17 +270,18 @@
         let currentUserName = '';
         let isHost = false;
         let prevParticipantsCount = 0;
-        let isSpeakerOn = true; // Estado do Viva Voz
-        let currentAudioOutputId = 'default'; // Guardar ID do dispositivo de áudio
+        let isSpeakerOn = true;
+        let currentAudioOutputId = 'default';
         
         let localStream = null;
-        let processedStream = null;
+        let processedStream = null; // Stream de Áudio Processado
         let peerConnections = {}; 
         let audioContext = null;
         let audioAnalysers = {}; 
         let gateGainNode = null; 
         let animationFrameId = null;
         let speechHoldTimer = null;
+        let remoteStreams = {}; // { userId: MediaStream } (Áudio + Vídeo Remotos)
 
         let unsubRoom = null;
         let unsubParticipants = null;
@@ -299,9 +305,11 @@
             roomsListContainer: document.getElementById('rooms-list-container'),
             userNameInput: document.getElementById('user-name-input'),
             roomIdInput: document.getElementById('room-id-input'),
+            newRoomNameInput: document.getElementById('new-room-name'),
             createRoomBtn: document.getElementById('create-room-btn'),
             joinRoomBtn: document.getElementById('join-room-btn'),
             displayRoomId: document.getElementById('display-room-id'),
+            displayRoomName: document.getElementById('display-room-name'),
             participantCount: document.getElementById('participant-count'),
             participantsGrid: document.getElementById('participants-grid'),
             copyLinkBtn: document.getElementById('copy-link-btn'),
@@ -311,6 +319,7 @@
             leaveBtn: document.getElementById('leave-btn'),
             footerLeaveBtn: document.getElementById('footer-leave-btn'),
             toggleMicBtn: document.getElementById('toggle-mic-btn'),
+            toggleVideoBtn: document.getElementById('toggle-video-btn'),
             speakerBtn: document.getElementById('speaker-btn'),
             speakerSeparator: document.getElementById('speaker-separator'),
             toast: document.getElementById('toast'),
@@ -336,44 +345,28 @@
         async function cleanGhostRooms() {
             if (!confirm("Limpar salas vazias e corrigir erros?")) return;
             showToast("A limpar salas...");
-            
             try {
                 const roomsRef = collection(db, 'artifacts', appId, 'public', 'data', 'rooms');
                 const snap = await getDocs(roomsRef);
-                let deleted = 0;
-                let corrected = 0;
-
+                let deleted = 0, corrected = 0;
                 const checks = [];
                 snap.forEach(roomDoc => {
                     checks.push((async () => {
                         const roomId = roomDoc.id;
                         const partsRef = collection(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId, 'participants');
                         const partsSnap = await getDocs(partsRef);
-                        
-                        // Se não tem participantes, deleta
-                        if (partsSnap.empty) {
-                            await deleteDoc(roomDoc.ref);
-                            deleted++;
-                        } else {
-                            // Se tem, corrige o contador
+                        if (partsSnap.empty) { await deleteDoc(roomDoc.ref); deleted++; } 
+                        else {
                             const realCount = partsSnap.size;
-                            if (roomDoc.data().participantCount !== realCount) {
-                                await updateDoc(roomDoc.ref, { participantCount: realCount });
-                                corrected++;
-                            }
+                            if (roomDoc.data().participantCount !== realCount) { await updateDoc(roomDoc.ref, { participantCount: realCount }); corrected++; }
                         }
                     })());
                 });
-
                 await Promise.all(checks);
                 showToast(`Limpeza: ${deleted} apagadas, ${corrected} corrigidas.`);
-            } catch (e) {
-                console.error(e);
-                showToast("Erro na limpeza.");
-            }
+            } catch (e) { console.error(e); showToast("Erro na limpeza."); }
         }
 
-        // --- ROOM LIST LISTENER ---
         function startLobbyListener() {
             const roomsRef = collection(db, 'artifacts', appId, 'public', 'data', 'rooms');
             unsubLobby = onSnapshot(roomsRef, (snap) => {
@@ -384,30 +377,18 @@
                     snap.forEach(docSnapshot => {
                         const roomData = docSnapshot.data();
                         const roomId = docSnapshot.id;
+                        const roomName = roomData.roomName || roomId;
                         const now = Date.now();
                         const count = roomData.participantCount || 0;
                         const created = roomData.createdAt || 0;
-
-                        // LIMPEZA AUTOMÁTICA DE SALAS VAZIAS (> 2 min e 0 pessoas)
-                        if (count <= 0 && (now - created) > 120000) {
-                            deleteDoc(docSnapshot.ref).catch(()=>{});
-                            return; // Não renderiza
-                        }
-
+                        if (count <= 0 && (now - created) > 120000) { deleteDoc(docSnapshot.ref).catch(()=>{}); return; }
                         const minutesAgo = Math.floor((now - created) / 60000);
                         const timeText = minutesAgo < 1 ? 'Agora mesmo' : `Há ${minutesAgo} min`;
-
                         const card = document.createElement('div');
                         card.className = "bg-slate-800/50 hover:bg-slate-800 border border-slate-700/50 hover:border-indigo-500/50 rounded-xl p-4 flex justify-between items-center transition-all group cursor-pointer";
                         card.onclick = () => { els.roomIdInput.value = roomId; joinRoomFromInput(); };
-
-                        card.innerHTML = `
-                            <div class="flex items-center gap-4">
-                                <div class="bg-slate-700 p-2.5 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition-colors text-slate-400"><i data-lucide="hash" class="w-5 h-5"></i></div>
-                                <div><h3 class="font-bold text-white font-mono tracking-wide text-sm">${roomId}</h3><div class="flex items-center gap-3 text-xs text-slate-400 mt-0.5"><span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> ${timeText}</span>${count > 0 ? `<span class="flex items-center gap-1 text-emerald-400"><i data-lucide="users" class="w-3 h-3"></i> ${count} online</span>` : ''}</div></div>
-                            </div>
-                            <button class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all opacity-0 group-hover:opacity-100 translate-x-2 group-hover:translate-x-0">Entrar</button>
-                        `;
+                        const badgeHTML = roomData.roomName ? `<span class="font-mono bg-slate-900 text-slate-500 px-1.5 py-0.5 rounded border border-slate-700 text-[10px]">#${roomId}</span>` : '';
+                        card.innerHTML = `<div class="flex items-center gap-4"><div class="bg-slate-700 p-2.5 rounded-lg group-hover:bg-indigo-600 group-hover:text-white transition-colors text-slate-400"><i data-lucide="hash" class="w-5 h-5"></i></div><div><div class="flex items-center gap-2"><h3 class="font-bold text-white tracking-wide text-sm">${roomName}</h3>${badgeHTML}</div><div class="flex items-center gap-3 text-xs text-slate-400 mt-0.5"><span class="flex items-center gap-1"><i data-lucide="clock" class="w-3 h-3"></i> ${timeText}</span>${count > 0 ? `<span class="flex items-center gap-1 text-emerald-400"><i data-lucide="users" class="w-3 h-3"></i> ${count} online</span>` : ''}</div></div></div><button class="bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg text-xs font-bold transition-all opacity-0 group-hover:opacity-100 translate-x-2 group-hover:translate-x-0">Entrar</button>`;
                         els.roomsListContainer.appendChild(card);
                     });
                 }
@@ -415,7 +396,6 @@
             });
         }
 
-        // --- SISTEMA DE SOM ---
         function playSound(type) {
             if (!audioContext || audioContext.state === 'suspended') return;
             const osc = audioContext.createOscillator(); const gainNode = audioContext.createGain(); osc.connect(gainNode); gainNode.connect(audioContext.destination); const now = audioContext.currentTime;
@@ -430,7 +410,6 @@
             if (audioContext.state === 'suspended') { await audioContext.resume(); const b=audioContext.createBuffer(1,1,22050); const s=audioContext.createBufferSource(); s.buffer=b; s.connect(audioContext.destination); s.start(0); }
         }
 
-        // --- AUTH ---
         async function initAuth() {
             try { els.loadingContent.classList.remove('hidden'); els.authErrorMsg.classList.add('hidden'); await signInAnonymously(auth); } 
             catch (err) { els.loadingContent.classList.add('hidden'); els.authErrorMsg.classList.remove('hidden'); els.errorCodeDisplay.textContent = err.code||err.message; }
@@ -442,38 +421,56 @@
                 els.appContainer.classList.remove('hidden'); 
                 els.lobbyView.classList.remove('hidden'); 
                 startLobbyListener(); 
-                
-                // Deteção de Mobile para mostrar botão Viva Voz
                 if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-                    els.speakerBtn.classList.remove('hidden');
-                    els.speakerSeparator.classList.remove('hidden');
+                    els.speakerBtn.classList.remove('hidden'); els.speakerSeparator.classList.remove('hidden');
                 }
             }
         });
 
-        // --- AUDIO PIPELINE ---
-        async function initLocalStream() {
+        // --- AUDIO/VIDEO PIPELINE ---
+        async function initLocalStream(withVideo = false) {
             try {
                 await unlockAudio();
-                const raw = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true }, video: false });
+                // Se já temos stream, paramos as tracks antigas para reconfigurar
+                if (localStream) {
+                    localStream.getTracks().forEach(t => t.stop());
+                }
+
+                const constraints = {
+                    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+                    video: withVideo ? { facingMode: "user" } : false
+                };
+
+                const raw = await navigator.mediaDevices.getUserMedia(constraints);
                 localStream = raw;
+                
+                // Configurar Grafo de Áudio (Noise Gate)
                 const source = audioContext.createMediaStreamSource(raw);
                 gateGainNode = audioContext.createGain(); gateGainNode.gain.value = 0;
                 const dest = audioContext.createMediaStreamDestination();
                 source.connect(gateGainNode); gateGainNode.connect(dest);
-                processedStream = dest.stream;
-                const an = audioContext.createAnalyser(); an.fftSize=512; source.connect(an); audioAnalysers['local']=an;
                 
-                // Tentativa inicial de definir saída se já estiver em Viva Voz
-                if (isSpeakerOn && 'setSinkId' in HTMLMediaElement.prototype) {
-                    await updateAudioOutput();
+                // O processedStream é o que enviamos (Áudio Tratado + Vídeo Raw se houver)
+                processedStream = dest.stream;
+                if (withVideo) {
+                    const videoTrack = raw.getVideoTracks()[0];
+                    if (videoTrack) processedStream.addTrack(videoTrack);
                 }
 
+                // Analisador Local
+                const an = audioContext.createAnalyser(); an.fftSize=512; source.connect(an); audioAnalysers['local']=an;
+                
+                if (isSpeakerOn && 'setSinkId' in HTMLMediaElement.prototype) await updateAudioOutput();
+
                 return true;
-            } catch (err) { alert("Erro Mic: "+err.message); return false; }
+            } catch (err) { alert("Erro ao acessar dispositivos: "+err.message); return false; }
         }
 
         function setupRemoteAudioAnalysis(id, stream) {
+            // Guardar stream remoto completo para usar no vídeo
+            remoteStreams[id] = stream;
+            
+            // Ligar analisador de áudio
             const s = audioContext.createMediaStreamSource(stream);
             const a = audioContext.createAnalyser(); a.fftSize=32; s.connect(a); audioAnalysers[id]=a;
         }
@@ -482,31 +479,22 @@
             if (animationFrameId) cancelAnimationFrame(animationFrameId);
             const loop = () => {
                 if (audioAnalysers['local'] && gateGainNode) {
-                    const an = audioAnalysers['local'];
-                    const data = new Uint8Array(an.frequencyBinCount);
-                    an.getByteFrequencyData(data);
+                    const an = audioAnalysers['local']; const data = new Uint8Array(an.frequencyBinCount); an.getByteFrequencyData(data);
                     let sum = 0; for(let i=0; i<data.length; i++) sum+=data[i];
                     const volPercent = Math.min(100, Math.round((sum/data.length/64)*100));
-                    
                     els.audioMeterBar.style.width = `${volPercent}%`;
                     const thresh = parseInt(els.gateThreshold.value);
                     const myData = participantsData.find(p => p.id === currentUser.uid);
                     const isMuted = myData?.isMuted || false;
-
                     if (!isMuted && volPercent > thresh) {
                         gateGainNode.gain.setTargetAtTime(1, audioContext.currentTime, 0.05);
-                        els.gateIndicator.classList.replace('bg-red-500','bg-emerald-500');
-                        els.gateStatusText.textContent = "A Transmitir"; els.gateStatusText.className="font-mono font-medium text-emerald-400";
-                        if (speechHoldTimer) clearTimeout(speechHoldTimer);
-                        speechHoldTimer = setTimeout(() => { speechHoldTimer = null; }, 150);
+                        els.gateIndicator.classList.replace('bg-red-500','bg-emerald-500'); els.gateStatusText.textContent = "A Transmitir"; els.gateStatusText.className="font-mono font-medium text-emerald-400";
+                        if (speechHoldTimer) clearTimeout(speechHoldTimer); speechHoldTimer = setTimeout(() => { speechHoldTimer = null; }, 150);
                     } else if (!speechHoldTimer) {
                         gateGainNode.gain.setTargetAtTime(0, audioContext.currentTime, 0.05);
-                        els.gateIndicator.classList.replace('bg-emerald-500','bg-red-500');
-                        els.gateStatusText.textContent = isMuted ? "Mutado" : "Silêncio";
-                        els.gateStatusText.className = isMuted ? "font-mono font-medium text-red-400" : "font-mono font-medium text-slate-400";
+                        els.gateIndicator.classList.replace('bg-emerald-500','bg-red-500'); els.gateStatusText.textContent = isMuted ? "Mutado" : "Silêncio"; els.gateStatusText.className = isMuted ? "font-mono font-medium text-red-400" : "font-mono font-medium text-slate-400";
                     }
                 }
-                
                 Object.keys(audioAnalysers).forEach(id => {
                     const an = audioAnalysers[id]; const d = new Uint8Array(an.frequencyBinCount); an.getByteFrequencyData(d);
                     let s=0; for(let i=0;i<d.length;i++) s+=d[i];
@@ -520,65 +508,97 @@
 
         els.gateThreshold.addEventListener('input', (e) => els.thresholdMarker.style.left = `${e.target.value}%`);
 
-        // --- SPEAKERPHONE LOGIC ---
         async function updateAudioOutput() {
             if (!('setSinkId' in HTMLMediaElement.prototype)) return;
-
             try {
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 const audioOutputs = devices.filter(d => d.kind === 'audiooutput');
-                
                 let targetId = 'default';
                 if (isSpeakerOn) {
                     const speaker = audioOutputs.find(d => d.label.toLowerCase().includes('speaker'));
                     if (speaker) targetId = speaker.deviceId;
                 }
-                
                 currentAudioOutputId = targetId;
-
                 const audioElements = els.audioContainer.querySelectorAll('audio');
                 for (const audio of audioElements) {
-                    if (audio.sinkId !== targetId) {
-                        await audio.setSinkId(targetId).catch(e => console.warn("Failed to set sinkId", e));
-                    }
+                    if (audio.sinkId !== targetId) await audio.setSinkId(targetId).catch(e => console.warn("Failed to set sinkId", e));
                 }
-            } catch(e) {
-                console.error("Error updating audio output:", e);
-            }
+            } catch(e) { console.error("Error updating audio output:", e); }
         }
 
         async function toggleSpeaker() {
             isSpeakerOn = !isSpeakerOn;
             const icon = isSpeakerOn ? 'volume-2' : 'phone';
             els.speakerBtn.innerHTML = `<i data-lucide="${icon}" class="w-6 h-6"></i>`;
-            
             if ('setSinkId' in HTMLMediaElement.prototype) {
-                await updateAudioOutput();
-                showToast(isSpeakerOn ? "Viva Voz Ativo" : "Auricular Ativo");
+                await updateAudioOutput(); showToast(isSpeakerOn ? "Viva Voz Ativo" : "Auricular Ativo");
             } else if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
                 alert("No iPhone/iPad, por favor usa o Centro de Controlo ou clica no ícone de AirPlay/Som para alterar a saída.");
+            } else { showToast("Funcionalidade não suportada neste browser."); }
+            lucide.createIcons();
+        }
+
+        // --- VIDEO TOGGLE & RENEGOTIATION ---
+        async function toggleMyCamera() {
+            if (!currentUser || !currentRoomID) return;
+            const myData = participantsData.find(p => p.id === currentUser.uid);
+            const newVideoState = !myData.isVideoOn;
+
+            // Se for ligar o vídeo e não tivermos track, reiniciar stream
+            if (newVideoState) {
+                await initLocalStream(true); // Pede vídeo
+                // Atualizar todas as conexões peer com a nova track de vídeo
+                const videoTrack = processedStream.getVideoTracks()[0];
+                if (videoTrack) {
+                    Object.keys(peerConnections).forEach(pid => {
+                        const pc = peerConnections[pid];
+                        // Adicionar track ao PC (Isso dispara negotiationneeded, mas vamos fazer manual)
+                        const sender = pc.getSenders().find(s => s.track && s.track.kind === 'video');
+                        if (sender) sender.replaceTrack(videoTrack);
+                        else {
+                            pc.addTrack(videoTrack, processedStream);
+                            // Criar nova oferta para renegociar
+                            pc.createOffer().then(o => pc.setLocalDescription(o)).then(() => {
+                                addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomID, 'participants', pid, 'offers'), { 
+                                    offer: { type: pc.localDescription.type, sdp: pc.localDescription.sdp }, from: currentUser.uid 
+                                });
+                            });
+                        }
+                    });
+                }
             } else {
-                showToast("Funcionalidade não suportada neste browser.");
+                // Desligar vídeo: Parar track e atualizar
+                if (localStream) {
+                    localStream.getVideoTracks().forEach(t => t.stop());
+                }
+                // (Opcional) Poderíamos renegociar para remover a track, mas parar e mudar o estado visual é mais rápido
             }
+
+            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomID, 'participants', currentUser.uid), { isVideoOn: newVideoState });
+            updateFooterVideoState(newVideoState);
+        }
+
+        function updateFooterVideoState(isOn) {
+            els.toggleVideoBtn.className = `p-4 rounded-full transition-all text-white relative group shadow-lg ${isOn ? 'bg-indigo-600 hover:bg-indigo-500' : 'bg-slate-700 hover:bg-slate-600'}`;
+            els.toggleVideoBtn.innerHTML = `<i data-lucide="${isOn ? 'video' : 'video-off'}" class="w-6 h-6"></i>`;
             lucide.createIcons();
         }
 
         // --- ROOM LOGIC ---
         async function createRoom() {
             const name = els.userNameInput.value.trim();
+            const roomName = els.newRoomNameInput.value.trim();
             if (!name) return showToast("Nome obrigatório");
-            if (!await initLocalStream()) return;
+            if (!await initLocalStream(false)) return; // Começa sem vídeo
             currentUserName = name;
             els.createRoomBtn.disabled = true; els.createRoomBtn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> A criar...`;
-            
             try {
                 const newId = Math.random().toString(36).substring(2, 8).toUpperCase();
-                // Cria com participantCount = 0 inicialmente, o join incrementa
                 await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', newId), { 
-                    hostId: currentUser.uid, createdAt: Date.now(), allMuted: false, participantCount: 0 
+                    hostId: currentUser.uid, createdAt: Date.now(), allMuted: false, participantCount: 0, roomName: roomName || null
                 });
                 await joinRoomLogic(newId);
-            } catch (e) { alert("Erro: "+e.message); els.createRoomBtn.disabled = false; els.createRoomBtn.textContent = "Criar Nova Sala"; }
+            } catch (e) { alert("Erro: "+e.message); els.createRoomBtn.disabled = false; els.createRoomBtn.textContent = "Criar"; }
         }
 
         async function joinRoomFromInput() {
@@ -586,7 +606,7 @@
             const name = els.userNameInput.value.trim();
             if (!name) return showToast("Digita o teu nome primeiro!");
             if (!id) return showToast("Seleciona uma sala ou digita o código.");
-            if (!await initLocalStream()) return;
+            if (!await initLocalStream(false)) return; // Começa sem vídeo
             currentUserName = name;
             els.joinRoomBtn.disabled = true;
             await joinRoomLogic(id);
@@ -595,12 +615,10 @@
         async function joinRoomLogic(id) {
             currentRoomID = id; prevParticipantsCount = 0;
             if (unsubLobby) unsubLobby(); 
-
             await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', id), { participantCount: increment(1) }).catch(()=>{});
             await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', id, 'participants', currentUser.uid), {
-                name: currentUserName, joinedAt: Date.now(), isMuted: false, volume: 1.0
+                name: currentUserName, joinedAt: Date.now(), isMuted: false, isVideoOn: false, volume: 1.0
             });
-
             els.lobbyView.classList.add('hidden'); els.roomView.classList.remove('hidden'); els.displayRoomId.textContent = id;
             startProcessingLoop(); setupAllListeners(id);
         }
@@ -608,20 +626,17 @@
         function setupAllListeners(roomId) {
             const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
             const partsRef = collection(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId, 'participants');
-
             unsubRoom = onSnapshot(roomRef, (snap) => {
                 if (snap.exists()) {
                     const data = snap.data();
+                    if (data.roomName) els.displayRoomName.textContent = data.roomName; else els.displayRoomName.textContent = "Sala";
                     if (data.allMuted && !globalMuteState) playSound('muteAll');
                     else if (!data.allMuted && globalMuteState) playSound('unmuteAll');
                     globalMuteState = data.allMuted || false;
                     isHost = (data.hostId === currentUser.uid);
                     isHost ? els.hostControls.classList.remove('hidden') : els.hostControls.classList.add('hidden');
-                } else {
-                    alert("A sala foi encerrada."); leaveCall(true);
-                }
+                } else { alert("A sala foi encerrada."); leaveCall(true); }
             });
-
             unsubParticipants = onSnapshot(query(partsRef), (snap) => {
                 const count = snap.size;
                 if (count > prevParticipantsCount && prevParticipantsCount !== 0) playSound('join');
@@ -637,7 +652,6 @@
                 });
                 renderParticipants();
             });
-
             unsubOffers = onSnapshot(collection(partsRef, currentUser.uid, 'offers'), s => s.docChanges().forEach(c => { if(c.type==='added') handleOffer(c.doc.data().offer, c.doc.data().from) }));
             unsubAnswers = onSnapshot(collection(partsRef, currentUser.uid, 'answers'), s => s.docChanges().forEach(c => { if(c.type==='added') handleAnswer(c.doc.data().answer, c.doc.data().from) }));
             unsubCandidates = onSnapshot(collection(partsRef, currentUser.uid, 'candidates'), s => s.docChanges().forEach(c => { if(c.type==='added') handleCandidate(c.doc.data().candidate, c.doc.data().from) }));
@@ -650,20 +664,21 @@
             processedStream.getTracks().forEach(t => pc.addTrack(t, processedStream));
             pc.onicecandidate = e => { if (e.candidate) addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomID, 'participants', tid, 'candidates'), { candidate: e.candidate.toJSON(), from: currentUser.uid }); };
             pc.ontrack = e => {
-                let el = document.getElementById(`audio-${tid}`);
-                if (!el) { 
-                    el=document.createElement('audio'); 
-                    el.id=`audio-${tid}`; 
-                    el.autoplay=true; 
-                    el.setAttribute('playsinline',''); 
-                    els.audioContainer.appendChild(el); 
-                    
-                    // Aplica a saída de áudio correta ao criar o elemento
-                    if ('setSinkId' in HTMLMediaElement.prototype && currentAudioOutputId !== 'default') {
-                        el.setSinkId(currentAudioOutputId).catch(e => console.warn(e));
-                    }
+                // Áudio (Hidden)
+                let audioEl = document.getElementById(`audio-${tid}`);
+                if (!audioEl) { 
+                    audioEl=document.createElement('audio'); audioEl.id=`audio-${tid}`; audioEl.autoplay=true; audioEl.setAttribute('playsinline',''); els.audioContainer.appendChild(audioEl);
+                    if ('setSinkId' in HTMLMediaElement.prototype && currentAudioOutputId !== 'default') audioEl.setSinkId(currentAudioOutputId).catch(e=>{});
                 }
-                el.srcObject = e.streams[0]; setupRemoteAudioAnalysis(tid, e.streams[0]);
+                // Se track for áudio, liga ao elemento de áudio
+                if (e.track.kind === 'audio') {
+                    audioEl.srcObject = e.streams[0]; setupRemoteAudioAnalysis(tid, e.streams[0]);
+                }
+                // Se track for vídeo, atualiza a referência para renderParticipants usar
+                if (e.track.kind === 'video') {
+                    remoteStreams[tid] = e.streams[0];
+                    renderParticipants(); // Re-renderizar para mostrar o vídeo
+                }
             };
             if (init) pc.createOffer().then(o => pc.setLocalDescription(o)).then(() => addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomID, 'participants', tid, 'offers'), { offer: { type: pc.localDescription.type, sdp: pc.localDescription.sdp }, from: currentUser.uid }));
         }
@@ -678,6 +693,7 @@
             participantsData.sort((a, b) => a.joinedAt - b.joinedAt);
             const myData = participantsData.find(p => p.id === currentUser.uid);
             updateFooterMicState(myData?.isMuted);
+            updateFooterVideoState(myData?.isVideoOn);
 
             participantsData.forEach(p => {
                 const isMe = p.id === currentUser.uid;
@@ -690,17 +706,38 @@
                 let volCtrl = '';
                 if (isHost && !isMe) {
                     const vol = (p.volume!==undefined) ? p.volume : 1.0;
-                    volCtrl = `<div class="w-full px-4 mt-2"><label class="text-[10px] text-slate-400 font-bold">Vol: ${Math.round(vol*100)}%</label><input type="range" min="0" max="1" step="0.1" value="${vol}" onchange="window.updateUserVolume('${p.id}', this.value)"></div>`;
+                    volCtrl = `<div class="w-full px-4 mt-2 relative z-20"><label class="text-[10px] text-slate-400 font-bold">Vol: ${Math.round(vol*100)}%</label><input type="range" min="0" max="1" step="0.1" value="${vol}" onchange="window.updateUserVolume('${p.id}', this.value)"></div>`;
                 }
 
                 card.className = `relative aspect-video rounded-2xl flex flex-col items-center justify-center border-2 transition-all shadow-lg overflow-hidden ${p.isMuted ? 'bg-slate-900 border-slate-800' : 'bg-slate-800 border-indigo-500/30'}`;
-                card.innerHTML = `
-                    ${globalMuteState ? '<div class="absolute top-2 left-2 px-2 py-0.5 bg-red-600/80 text-[10px] font-bold rounded text-white z-10">Silenciado</div>' : ''}
+                
+                let contentHTML = '';
+                
+                // VIDEO RENDER LOGIC
+                if (p.isVideoOn) {
+                    contentHTML = `<video id="video-${p.id}" autoplay playsinline muted class="absolute inset-0 w-full h-full object-cover"></video>
+                    <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
+                    <div class="absolute bottom-3 left-4 right-14 text-white font-bold truncate z-10 text-sm flex items-center gap-2">
+                        ${p.name} ${isMe?'(Tu)':''}
+                    </div>`;
+                } else {
+                    // AVATAR RENDER LOGIC
+                    contentHTML = `${globalMuteState ? '<div class="absolute top-2 left-2 px-2 py-0.5 bg-red-600/80 text-[10px] font-bold rounded text-white z-10">Silenciado</div>' : ''}
                     <div id="visual-${visualId}" class="w-16 h-16 rounded-full bg-slate-700 flex items-center justify-center text-2xl font-bold text-indigo-400 mb-1 transition-all duration-75">${(p.name||'?').charAt(0).toUpperCase()}</div>
-                    <div class="text-center z-10 w-full"><div class="font-medium flex items-center justify-center gap-1 text-slate-200">${p.name} ${isMe ? '<span class="text-[10px] bg-slate-700 px-1.5 py-0.5 rounded uppercase font-bold text-slate-300">Tu</span>' : ''} ${isFirst ? '<i data-lucide="crown" class="w-3 h-3 text-yellow-500 ml-1"></i>' : ''}</div>${volCtrl}</div>
-                    <div class="absolute bottom-3 right-3 p-1.5 rounded-full ${micClass}">${micIcon}</div>
-                `;
+                    <div class="text-center z-10 w-full"><div class="font-medium flex items-center justify-center gap-1 text-slate-200">${p.name} ${isMe ? '<span class="text-[10px] bg-slate-700 px-1.5 py-0.5 rounded uppercase font-bold text-slate-300">Tu</span>' : ''} ${isFirst ? '<i data-lucide="crown" class="w-3 h-3 text-yellow-500 ml-1"></i>' : ''}</div>${volCtrl}</div>`;
+                }
+
+                card.innerHTML = contentHTML + `<div class="absolute bottom-3 right-3 p-1.5 rounded-full ${micClass} z-20 shadow-md backdrop-blur-sm">${micIcon}</div>`;
                 els.participantsGrid.appendChild(card);
+
+                // ATTACH VIDEO STREAM AFTER RENDER
+                if (p.isVideoOn) {
+                    const videoEl = document.getElementById(`video-${p.id}`);
+                    if (videoEl) {
+                        if (isMe && localStream) videoEl.srcObject = localStream;
+                        else if (!isMe && remoteStreams[p.id]) videoEl.srcObject = remoteStreams[p.id];
+                    }
+                }
             });
             lucide.createIcons();
         }
@@ -748,6 +785,7 @@
         els.joinRoomBtn.addEventListener('click', joinRoomFromInput);
         els.retryBtn.addEventListener('click', initAuth);
         els.toggleMicBtn.addEventListener('click', toggleMyMic);
+        els.toggleVideoBtn.addEventListener('click', toggleMyCamera);
         els.muteAllBtn.addEventListener('click', () => setAllMute(true));
         els.unmuteAllBtn.addEventListener('click', () => setAllMute(false));
         els.leaveBtn.addEventListener('click', () => leaveCall(false));
