@@ -1,0 +1,854 @@
+<!DOCTYPE html>
+<html lang="pt-PT">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VibeCall - Sala de Reunião</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+
+    <!-- Google Fonts -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        
+        /* Animação para quem está a falar */
+        .speaking-active {
+            box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7);
+            animation: pulse-audio 1.5s infinite;
+        }
+        
+        @keyframes pulse-audio {
+            0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.7); }
+            50% { transform: scale(1.05); box-shadow: 0 0 0 10px rgba(99, 102, 241, 0); }
+            100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+        }
+
+        /* Estilo dos Sliders */
+        input[type=range] {
+            height: 6px;
+            -webkit-appearance: none;
+            margin: 10px 0;
+            width: 100%;
+            background: #334155;
+            border-radius: 3px;
+            outline: none;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            height: 16px;
+            width: 16px;
+            border-radius: 50%;
+            background: #6366f1;
+            cursor: pointer;
+            transition: background .15s ease-in-out;
+            border: 2px solid #1e293b;
+        }
+        input[type=range]::-webkit-slider-thumb:hover {
+            background: #818cf8;
+        }
+
+        /* Barra de Volume do Noise Gate */
+        .meter-container {
+            width: 100%;
+            height: 12px;
+            background-color: #1e293b;
+            border-radius: 6px;
+            overflow: hidden;
+            position: relative;
+            margin-top: 8px;
+        }
+        .meter-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #22c55e 0%, #eab308 80%, #ef4444 100%);
+            transition: width 0.05s linear;
+        }
+        .threshold-line {
+            position: absolute;
+            top: 0;
+            bottom: 0;
+            width: 2px;
+            background-color: white;
+            z-index: 10;
+            box-shadow: 0 0 4px rgba(0,0,0,0.5);
+        }
+
+        /* Drawer Transition */
+        #settings-drawer {
+            transition: transform 0.3s ease-in-out;
+        }
+        #drawer-overlay {
+            transition: opacity 0.3s ease-in-out;
+        }
+
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen overflow-x-hidden">
+
+    <!-- Áudios Remotos -->
+    <div id="audio-container" class="hidden"></div>
+
+    <!-- Ecrã de Carregamento -->
+    <div id="loading-screen" class="fixed inset-0 flex items-center justify-center bg-slate-900 z-50">
+        <div class="text-center w-full max-w-lg px-4" id="loading-content">
+            <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-indigo-500 mx-auto mb-4"></div>
+            <p class="text-slate-400">A configurar áudio...</p>
+        </div>
+        
+        <div id="auth-error-msg" class="hidden w-full max-w-lg bg-red-950/90 border border-red-500/50 p-6 rounded-xl text-left shadow-2xl mx-4 backdrop-blur-sm">
+            <h3 class="text-red-400 font-bold text-lg mb-2 flex items-center gap-2">
+                <i data-lucide="alert-triangle" class="w-5 h-5"></i> <span id="error-title">Erro de Sistema</span>
+            </h3>
+            <p id="error-desc" class="text-slate-300 text-sm mb-4">Algo correu mal.</p>
+            <div class="bg-black/40 p-3 rounded-lg text-xs text-red-300 font-mono mb-4 border border-red-900/30 break-all">
+                Info: <span id="error-code-display">...</span>
+            </div>
+            <button id="retry-btn" class="w-full bg-white text-slate-900 font-bold py-3 rounded-lg hover:bg-slate-200 transition-colors">
+                Tentar Novamente
+            </button>
+        </div>
+    </div>
+
+    <!-- Gaveta de Configurações (Drawer) -->
+    <div id="drawer-overlay" class="fixed inset-0 bg-black/60 z-[60] hidden opacity-0"></div>
+    <div id="settings-drawer" class="fixed top-0 left-0 h-full w-80 bg-slate-900 border-r border-slate-800 z-[70] transform -translate-x-full shadow-2xl flex flex-col">
+        <div class="p-5 border-b border-slate-800 flex justify-between items-center bg-slate-900">
+            <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                <i data-lucide="settings" class="w-5 h-5 text-indigo-400"></i> Configurações
+            </h2>
+            <button id="close-drawer-btn" class="text-slate-400 hover:text-white p-2 rounded-lg hover:bg-slate-800 transition-colors">
+                <i data-lucide="x" class="w-5 h-5"></i>
+            </button>
+        </div>
+        
+        <div class="p-5 overflow-y-auto flex-1 space-y-6">
+            <!-- Painel Noise Gate -->
+            <div class="bg-slate-800/50 p-4 rounded-xl border border-slate-700">
+                <div class="flex items-center justify-between mb-4">
+                    <h3 class="text-sm font-bold text-slate-200 flex items-center gap-2">
+                        <i data-lucide="mic-vocal" class="w-4 h-4 text-indigo-400"></i>
+                        Supressão de Ruído
+                    </h3>
+                    <div class="flex items-center gap-2 px-2 py-1 bg-slate-900 rounded text-[10px] border border-slate-700">
+                        <div id="gate-indicator" class="w-2 h-2 rounded-full bg-red-500 transition-colors duration-200"></div>
+                        <span id="gate-status-text" class="font-mono font-medium text-slate-400">OFF</span>
+                    </div>
+                </div>
+
+                <div class="space-y-4">
+                    <p class="text-xs text-slate-400 leading-relaxed">
+                        Ajusta a sensibilidade para cortar o ruído de fundo (ventoinhas, carros, etc).
+                    </p>
+
+                    <div class="relative w-full">
+                        <div class="flex justify-between text-xs text-slate-500 mb-1 font-mono">
+                            <span>Sensível</span>
+                            <span>Rígido</span>
+                        </div>
+                        <input type="range" id="gate-threshold" min="0" max="100" value="15" class="w-full z-20 relative">
+                        
+                        <div class="meter-container bg-slate-900 border border-slate-700">
+                            <div id="audio-meter-bar" class="meter-bar opacity-80"></div>
+                            <div id="threshold-marker" class="threshold-line" style="left: 15%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Informações -->
+            <div class="bg-indigo-900/20 p-4 rounded-xl border border-indigo-500/20">
+                <h3 class="text-sm font-bold text-indigo-300 mb-2">Como usar?</h3>
+                <ul class="text-xs text-indigo-200 space-y-2 list-disc list-inside">
+                    <li>Fica em silêncio.</li>
+                    <li>Move a linha branca para a direita até ficar à frente da barra verde.</li>
+                    <li>Fala para testar se a barra passa a linha.</li>
+                </ul>
+            </div>
+        </div>
+        
+        <div class="p-4 border-t border-slate-800 text-center text-xs text-slate-500">
+            VibeCall v1.2 Mobile
+        </div>
+    </div>
+
+    <!-- App Container -->
+    <div id="app-container" class="hidden p-4 md:p-8">
+        
+        <!-- Lobby -->
+        <div id="lobby-view" class="max-w-md mx-auto mt-10 md:mt-20 bg-slate-900 p-8 rounded-2xl border border-slate-800 shadow-2xl hidden">
+            <div class="flex justify-center mb-6">
+                <div class="p-4 bg-indigo-600 rounded-full shadow-lg shadow-indigo-600/20">
+                    <i data-lucide="mic" class="w-8 h-8 text-white"></i>
+                </div>
+            </div>
+            <h1 class="text-2xl font-bold text-center mb-8 bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-cyan-400">VibeCall</h1>
+            
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-slate-400 mb-1">O teu Nome</label>
+                    <input type="text" id="user-name-input" placeholder="Ex: João Silva" 
+                        class="w-full bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 focus:ring-2 focus:ring-indigo-500 outline-none text-white placeholder-slate-500">
+                </div>
+
+                <div class="pt-4 space-y-3">
+                    <button id="create-room-btn" class="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold py-3 rounded-lg flex items-center justify-center gap-2 transition-all">
+                        <i data-lucide="plus" class="w-5 h-5"></i> Criar Nova Sala
+                    </button>
+                    
+                    <div class="relative py-2">
+                        <div class="absolute inset-0 flex items-center"><span class="w-full border-t border-slate-800"></span></div>
+                        <div class="relative flex justify-center text-xs uppercase"><span class="bg-slate-900 px-2 text-slate-500">Ou entrar numa</span></div>
+                    </div>
+
+                    <div class="flex gap-2">
+                        <input type="text" id="room-id-input" placeholder="Código da Sala" 
+                            class="flex-1 bg-slate-800 border border-slate-700 rounded-lg px-4 py-3 outline-none text-white focus:ring-2 focus:ring-slate-600 uppercase placeholder-slate-500">
+                        <button id="join-room-btn" class="bg-slate-700 hover:bg-slate-600 text-white px-6 py-2 rounded-lg transition-colors font-medium">
+                            Entrar
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Sala -->
+        <div id="room-view" class="max-w-6xl mx-auto space-y-6 hidden">
+            
+            <!-- Barra Superior -->
+            <div class="flex flex-col md:flex-row md:items-center justify-between bg-slate-900 p-4 rounded-xl border border-slate-800 gap-4 shadow-lg mb-6 relative">
+                
+                <!-- Botão de Configurações (Mobile Friendly) -->
+                <button id="open-settings-btn" class="absolute top-4 left-4 md:static p-2 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition-colors border border-slate-700 shadow-lg z-10">
+                    <i data-lucide="settings-2" class="w-5 h-5"></i>
+                </button>
+
+                <div class="flex items-center gap-4 mt-8 md:mt-0 ml-2 md:ml-0">
+                    <div class="bg-indigo-600 p-2.5 rounded-lg hidden md:block">
+                        <i data-lucide="radio" class="w-5 h-5 text-white animate-pulse"></i>
+                    </div>
+                    <div>
+                        <h2 class="font-bold flex items-center gap-2 text-lg">
+                            Sala: <span id="display-room-id" class="font-mono text-indigo-300"></span>
+                            <button id="copy-link-btn" class="p-1.5 hover:bg-slate-800 rounded-md text-slate-400 hover:text-white transition-colors" title="Copiar ID">
+                                <i data-lucide="copy" class="w-4 h-4"></i>
+                            </button>
+                        </h2>
+                        <p class="text-xs text-slate-400"><span id="participant-count">0</span> na chamada</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center gap-2 flex-wrap justify-end mt-4 md:mt-0">
+                    <div id="host-controls" class="hidden flex gap-2 mr-2 md:mr-4 md:border-r border-slate-800 pr-2 md:pr-4">
+                        <button id="mute-all-btn" class="flex items-center gap-2 bg-red-900/20 hover:bg-red-900/40 text-red-400 border border-red-900/30 px-3 py-2 rounded-lg text-sm transition-all">
+                            <i data-lucide="mic-off" class="w-4 h-4"></i> <span class="hidden sm:inline">Mutar Todos</span>
+                        </button>
+                        <button id="unmute-all-btn" class="flex items-center gap-2 bg-emerald-900/20 hover:bg-emerald-900/40 text-emerald-400 border border-emerald-900/30 px-3 py-2 rounded-lg text-sm transition-all">
+                            <i data-lucide="mic" class="w-4 h-4"></i> <span class="hidden sm:inline">Desmutar</span>
+                        </button>
+                    </div>
+                    <button id="leave-btn" class="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium transition-all shadow-lg shadow-red-600/20">
+                        <i data-lucide="log-out" class="w-4 h-4"></i> Sair
+                    </button>
+                </div>
+            </div>
+
+            <!-- Grelha -->
+            <div id="participants-grid" class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4"></div>
+            <div class="h-24"></div>
+
+            <!-- Rodapé Fixo -->
+            <div class="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur-md border border-slate-800 px-8 py-4 rounded-full flex items-center gap-6 shadow-2xl z-40">
+                <button id="toggle-mic-btn" class="p-4 rounded-full transition-all bg-slate-700 hover:bg-slate-600 text-white relative group shadow-lg shadow-indigo-900/20">
+                    <i data-lucide="mic" class="w-6 h-6"></i>
+                </button>
+                <div class="h-8 w-[1px] bg-slate-700"></div>
+                <button id="footer-leave-btn" class="p-4 bg-red-600 rounded-full hover:bg-red-700 transition-all text-white shadow-lg shadow-red-600/30">
+                    <i data-lucide="phone-off" class="w-6 h-6"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <div id="toast" class="fixed bottom-24 left-1/2 -translate-x-1/2 bg-slate-800 text-white px-4 py-2 rounded-lg shadow-xl border border-slate-700 opacity-0 transition-opacity duration-300 pointer-events-none z-50 text-sm"></div>
+
+    <!-- Firebase SDK (Versão 10.13.1) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
+        import { getAuth, signInAnonymously, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, updateDoc, collection, query, deleteDoc, addDoc, getDocs } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
+
+        // CONFIGURAÇÃO DO FIREBASE
+        const firebaseConfig = {
+            apiKey: "AIzaSyAnZGlheXlDQZ3Iwks8A5SNR9dfi3tbOuo",
+            authDomain: "vibecall-78012.firebaseapp.com",
+            projectId: "vibecall-78012",
+            storageBucket: "vibecall-78012.firebasestorage.app",
+            messagingSenderId: "530627865250",
+            appId: "1:530627865250:web:f852a863abfe85549305fb",
+            measurementId: "G-NH2DKE8TH5"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const appId = 'vibecall-site-live';
+
+        // WebRTC Config
+        const rtcConfig = {
+            iceServers: [
+                { urls: ['stun:stun1.l.google.com:19302', 'stun:stun2.l.google.com:19302'] }
+            ],
+            iceCandidatePoolSize: 10,
+        };
+
+        // Estado Global
+        let currentUser = null;
+        let currentRoomID = null;
+        let currentUserName = '';
+        let isHost = false;
+        let prevParticipantsCount = 0;
+        
+        // WebRTC & Áudio
+        let localStream = null;
+        let processedStream = null; // Stream após passar pelo Noise Gate
+        let peerConnections = {}; 
+        let audioContext = null;
+        let audioAnalysers = {}; 
+        let gateGainNode = null; // O "Portão" que abre e fecha o áudio
+        let animationFrameId = null;
+        let speechHoldTimer = null;
+
+        // Listeners
+        let unsubRoom = null;
+        let unsubParticipants = null;
+        let unsubOffers = null;
+        let unsubAnswers = null;
+        let unsubCandidates = null;
+        
+        let participantsData = [];
+        let globalMuteState = false;
+
+        const els = {
+            loadingScreen: document.getElementById('loading-screen'),
+            loadingContent: document.getElementById('loading-content'),
+            authErrorMsg: document.getElementById('auth-error-msg'),
+            errorCodeDisplay: document.getElementById('error-code-display'),
+            retryBtn: document.getElementById('retry-btn'),
+            appContainer: document.getElementById('app-container'),
+            lobbyView: document.getElementById('lobby-view'),
+            roomView: document.getElementById('room-view'),
+            userNameInput: document.getElementById('user-name-input'),
+            roomIdInput: document.getElementById('room-id-input'),
+            createRoomBtn: document.getElementById('create-room-btn'),
+            joinRoomBtn: document.getElementById('join-room-btn'),
+            displayRoomId: document.getElementById('display-room-id'),
+            participantCount: document.getElementById('participant-count'),
+            participantsGrid: document.getElementById('participants-grid'),
+            copyLinkBtn: document.getElementById('copy-link-btn'),
+            hostControls: document.getElementById('host-controls'),
+            muteAllBtn: document.getElementById('mute-all-btn'),
+            unmuteAllBtn: document.getElementById('unmute-all-btn'),
+            leaveBtn: document.getElementById('leave-btn'),
+            footerLeaveBtn: document.getElementById('footer-leave-btn'),
+            toggleMicBtn: document.getElementById('toggle-mic-btn'),
+            toast: document.getElementById('toast'),
+            audioContainer: document.getElementById('audio-container'),
+            // Elementos do Drawer
+            settingsDrawer: document.getElementById('settings-drawer'),
+            drawerOverlay: document.getElementById('drawer-overlay'),
+            openSettingsBtn: document.getElementById('open-settings-btn'),
+            closeDrawerBtn: document.getElementById('close-drawer-btn'),
+            // Elementos do Noise Gate
+            gateThreshold: document.getElementById('gate-threshold'),
+            audioMeterBar: document.getElementById('audio-meter-bar'),
+            thresholdMarker: document.getElementById('threshold-marker'),
+            gateIndicator: document.getElementById('gate-indicator'),
+            gateStatusText: document.getElementById('gate-status-text')
+        };
+
+        function showToast(msg) {
+            els.toast.textContent = msg;
+            els.toast.classList.remove('opacity-0');
+            setTimeout(() => els.toast.classList.add('opacity-0'), 3000);
+        }
+
+        // --- GAVETA DE CONFIGURAÇÕES ---
+        function toggleDrawer(open) {
+            if (open) {
+                els.drawerOverlay.classList.remove('hidden');
+                setTimeout(() => {
+                    els.drawerOverlay.classList.remove('opacity-0');
+                    els.settingsDrawer.classList.remove('-translate-x-full');
+                }, 10);
+            } else {
+                els.settingsDrawer.classList.add('-translate-x-full');
+                els.drawerOverlay.classList.add('opacity-0');
+                setTimeout(() => {
+                    els.drawerOverlay.classList.add('hidden');
+                }, 300);
+            }
+        }
+
+        // --- SISTEMA DE SOM (Sintetizador Web Audio API) ---
+        function playSound(type) {
+            if (!audioContext || audioContext.state === 'suspended') return;
+            const osc = audioContext.createOscillator();
+            const gainNode = audioContext.createGain();
+            osc.connect(gainNode);
+            gainNode.connect(audioContext.destination);
+            const now = audioContext.currentTime;
+
+            if (type === 'join') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(800, now);
+                osc.frequency.exponentialRampToValueAtTime(1200, now + 0.1);
+                gainNode.gain.setValueAtTime(0.1, now);
+                gainNode.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+                osc.start(now);
+                osc.stop(now + 0.5);
+            } else if (type === 'leave') {
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(300, now);
+                osc.frequency.linearRampToValueAtTime(100, now + 0.3);
+                gainNode.gain.setValueAtTime(0.1, now);
+                gainNode.gain.linearRampToValueAtTime(0.01, now + 0.3);
+                osc.start(now);
+                osc.stop(now + 0.3);
+            } else if (type === 'muteAll') {
+                osc.type = 'square';
+                osc.frequency.setValueAtTime(600, now);
+                gainNode.gain.setValueAtTime(0.05, now);
+                gainNode.gain.setValueAtTime(0, now + 0.1);
+                gainNode.gain.setValueAtTime(0.05, now + 0.15);
+                gainNode.gain.setValueAtTime(0, now + 0.25);
+                osc.start(now);
+                osc.stop(now + 0.3);
+            } else if (type === 'unmuteAll') {
+                // Rising tone (Abertura)
+                osc.type = 'sine';
+                osc.frequency.setValueAtTime(300, now);
+                osc.frequency.exponentialRampToValueAtTime(600, now + 0.2);
+                gainNode.gain.setValueAtTime(0.05, now);
+                gainNode.gain.linearRampToValueAtTime(0, now + 0.2);
+                osc.start(now);
+                osc.stop(now + 0.2);
+            }
+        }
+
+        async function unlockAudio() {
+            if (!audioContext) audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            if (audioContext.state === 'suspended') {
+                await audioContext.resume();
+                const buffer = audioContext.createBuffer(1, 1, 22050);
+                const source = audioContext.createBufferSource();
+                source.buffer = buffer;
+                source.connect(audioContext.destination);
+                source.start(0);
+            }
+        }
+
+        // --- AUTENTICAÇÃO ---
+        async function initAuth() {
+            try {
+                els.loadingContent.classList.remove('hidden');
+                els.authErrorMsg.classList.add('hidden');
+                await signInAnonymously(auth);
+            } catch (err) {
+                els.loadingContent.classList.add('hidden');
+                els.authErrorMsg.classList.remove('hidden');
+                els.errorCodeDisplay.textContent = err.code || err.message;
+            }
+        }
+        onAuthStateChanged(auth, u => {
+            if (u) {
+                currentUser = u;
+                els.loadingScreen.classList.add('hidden');
+                els.appContainer.classList.remove('hidden');
+                els.lobbyView.classList.remove('hidden');
+            }
+        });
+
+        // --- 2. PIPELINE DE ÁUDIO & NOISE GATE ---
+        async function initLocalStream() {
+            try {
+                await unlockAudio();
+                const rawStream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        echoCancellation: true,
+                        noiseSuppression: true, // Supressão nativa do browser
+                        autoGainControl: true,
+                        channelCount: 1
+                    }, 
+                    video: false 
+                });
+                
+                localStream = rawStream;
+                
+                // Configurar Grafo de Áudio para o Noise Gate
+                const source = audioContext.createMediaStreamSource(rawStream);
+                gateGainNode = audioContext.createGain();
+                gateGainNode.gain.value = 0; // Começa fechado por segurança
+                
+                const destination = audioContext.createMediaStreamDestination();
+                source.connect(gateGainNode);
+                gateGainNode.connect(destination);
+                
+                // Este é o stream processado que vamos enviar
+                processedStream = destination.stream;
+
+                // Analisador para detetar volume local ANTES do gate (Input puro)
+                const analyser = audioContext.createAnalyser();
+                analyser.fftSize = 512;
+                source.connect(analyser); 
+                audioAnalysers['local'] = analyser;
+
+                return true;
+            } catch (err) {
+                alert("Erro Mic: " + err.message);
+                return false;
+            }
+        }
+
+        function setupRemoteAudioAnalysis(id, stream) {
+            const source = audioContext.createMediaStreamSource(stream);
+            const analyser = audioContext.createAnalyser();
+            analyser.fftSize = 32;
+            source.connect(analyser);
+            // NÃO ligar ao destination para evitar eco
+            audioAnalysers[id] = analyser;
+        }
+
+        // Loop de Processamento Áudio
+        function startProcessingLoop() {
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            
+            const loop = () => {
+                // 1. Lógica do Noise Gate (Local)
+                if (audioAnalysers['local'] && gateGainNode) {
+                    const analyser = audioAnalysers['local'];
+                    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                    analyser.getByteFrequencyData(dataArray);
+                    
+                    // Média de volume
+                    let sum = 0;
+                    for(let i = 0; i < dataArray.length; i++) sum += dataArray[i];
+                    const averageVol = sum / dataArray.length; // 0 a 255
+                    
+                    // Normalizar para 0-100 para UI
+                    const volPercent = Math.min(100, Math.round((averageVol / 64) * 100));
+                    
+                    // Atualizar Barra Visual do Input
+                    els.audioMeterBar.style.width = `${volPercent}%`;
+
+                    // Ler Threshold do Slider
+                    const threshold = parseInt(els.gateThreshold.value);
+                    
+                    // Verificar estado Mute do Botão
+                    const myData = participantsData.find(p => p.id === currentUser.uid);
+                    const isSystemMuted = myData?.isMuted || false;
+
+                    if (!isSystemMuted && volPercent > threshold) {
+                        // ABRIR: Voz detetada acima do limite
+                        gateGainNode.gain.setTargetAtTime(1, audioContext.currentTime, 0.05);
+                        
+                        els.gateIndicator.classList.remove('bg-red-500');
+                        els.gateIndicator.classList.add('bg-emerald-500');
+                        els.gateStatusText.textContent = "A Transmitir";
+                        els.gateStatusText.className = "font-mono font-medium text-emerald-400";
+                        
+                        if (speechHoldTimer) clearTimeout(speechHoldTimer);
+                        speechHoldTimer = setTimeout(() => {
+                            speechHoldTimer = null; // RESETA O TIMER PARA FECHAR O PORTÃO DEPOIS
+                        }, 150); // Hold time reduzido para 150ms
+                        
+                    } else if (!speechHoldTimer) {
+                        // FECHAR: Silêncio ou Muted (Só entra aqui se speechHoldTimer for null)
+                        gateGainNode.gain.setTargetAtTime(0, audioContext.currentTime, 0.05); // Release rápido
+                        
+                        els.gateIndicator.classList.add('bg-red-500');
+                        els.gateIndicator.classList.remove('bg-emerald-500');
+                        
+                        if (isSystemMuted) {
+                            els.gateStatusText.textContent = "Mutado (Botão)";
+                            els.gateStatusText.className = "font-mono font-medium text-red-400";
+                        } else {
+                            els.gateStatusText.textContent = "Silêncio (Gate)";
+                            els.gateStatusText.className = "font-mono font-medium text-slate-400";
+                        }
+                    }
+                }
+
+                // 2. Atualizar Anéis Visuais (Quem está a falar na sala)
+                Object.keys(audioAnalysers).forEach(id => {
+                    const analyser = audioAnalysers[id];
+                    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                    analyser.getByteFrequencyData(dataArray);
+                    let s = 0; for(let i=0; i<dataArray.length; i++) s+=dataArray[i];
+                    const vol = s/dataArray.length;
+                    
+                    const el = document.getElementById(`visual-${id}`);
+                    if (el) {
+                        // Se o volume passar um mínimo visual
+                        if (vol > 10) el.classList.add('speaking-active');
+                        else el.classList.remove('speaking-active');
+                    }
+                });
+
+                animationFrameId = requestAnimationFrame(loop);
+            };
+            loop();
+        }
+
+        // Atualizar marcador visual do threshold quando slider mexe
+        els.gateThreshold.addEventListener('input', (e) => {
+            const val = e.target.value;
+            els.thresholdMarker.style.left = `${val}%`;
+        });
+
+
+        // --- LÓGICA DE SALA ---
+        async function createRoom() {
+            const name = els.userNameInput.value.trim();
+            if (!name) return showToast("Nome obrigatório");
+            if (!await initLocalStream()) return;
+
+            currentUserName = name;
+            els.createRoomBtn.textContent = "A criar...";
+            els.createRoomBtn.disabled = true;
+
+            try {
+                const newRoomID = Math.random().toString(36).substring(2, 8).toUpperCase();
+                await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', newRoomID), {
+                    hostId: currentUser.uid,
+                    createdAt: Date.now(),
+                    allMuted: false
+                });
+                await joinRoomLogic(newRoomID);
+            } catch (e) {
+                alert("Erro: " + e.message);
+                els.createRoomBtn.disabled = false;
+            }
+        }
+
+        async function joinRoomFromInput() {
+            const id = els.roomIdInput.value.trim().toUpperCase();
+            const name = els.userNameInput.value.trim();
+            if (!name || !id) return showToast("Dados incompletos");
+            if (!await initLocalStream()) return;
+
+            currentUserName = name;
+            els.joinRoomBtn.textContent = "A entrar...";
+            await joinRoomLogic(id);
+        }
+
+        async function joinRoomLogic(id) {
+            currentRoomID = id;
+            prevParticipantsCount = 0;
+            await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', id, 'participants', currentUser.uid), {
+                name: currentUserName, joinedAt: Date.now(), isMuted: false, volume: 1.0
+            });
+
+            els.lobbyView.classList.add('hidden');
+            els.roomView.classList.remove('hidden');
+            els.displayRoomId.textContent = id;
+            
+            startProcessingLoop();
+            setupAllListeners(id);
+        }
+
+        function setupAllListeners(roomId) {
+            const roomRef = doc(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId);
+            const partsRef = collection(db, 'artifacts', appId, 'public', 'data', 'rooms', roomId, 'participants');
+
+            unsubRoom = onSnapshot(roomRef, (snap) => {
+                if (snap.exists()) {
+                    const data = snap.data();
+                    
+                    // Som de Mute All
+                    if (data.allMuted && !globalMuteState) {
+                        playSound('muteAll');
+                    } 
+                    // Som de Unmute All
+                    else if (!data.allMuted && globalMuteState) {
+                        playSound('unmuteAll');
+                    }
+                    
+                    globalMuteState = data.allMuted || false;
+                    isHost = (data.hostId === currentUser.uid);
+                    isHost ? els.hostControls.classList.remove('hidden') : els.hostControls.classList.add('hidden');
+                }
+            });
+
+            unsubParticipants = onSnapshot(query(partsRef), (snap) => {
+                const count = snap.size;
+                if (count > prevParticipantsCount && prevParticipantsCount !== 0) playSound('join');
+                if (count < prevParticipantsCount) playSound('leave');
+                prevParticipantsCount = count;
+
+                participantsData = [];
+                snap.forEach(d => {
+                    const data = d.data();
+                    participantsData.push({ id: d.id, ...data });
+                    
+                    // Atualizar Volume Remoto
+                    const audioEl = document.getElementById(`audio-${d.id}`);
+                    if (audioEl) audioEl.volume = (data.volume !== undefined) ? data.volume : 1.0;
+
+                    // WebRTC Mesh connection
+                    if (d.id !== currentUser.uid && !peerConnections[d.id]) {
+                        if (currentUser.uid < d.id) createPeerConnection(d.id, true);
+                        else createPeerConnection(d.id, false);
+                    }
+                });
+                renderParticipants();
+            });
+
+            unsubOffers = onSnapshot(collection(partsRef, currentUser.uid, 'offers'), s => s.docChanges().forEach(c => { if(c.type==='added') handleOffer(c.doc.data().offer, c.doc.data().from) }));
+            unsubAnswers = onSnapshot(collection(partsRef, currentUser.uid, 'answers'), s => s.docChanges().forEach(c => { if(c.type==='added') handleAnswer(c.doc.data().answer, c.doc.data().from) }));
+            unsubCandidates = onSnapshot(collection(partsRef, currentUser.uid, 'candidates'), s => s.docChanges().forEach(c => { if(c.type==='added') handleCandidate(c.doc.data().candidate, c.doc.data().from) }));
+        }
+
+        // --- WEBRTC ---
+        function createPeerConnection(targetId, isInitiator) {
+            if (peerConnections[targetId]) return;
+            const pc = new RTCPeerConnection(rtcConfig);
+            peerConnections[targetId] = pc;
+            
+            // IMPORTANTE: Enviar processedStream (com Gate aplicado)
+            processedStream.getTracks().forEach(track => pc.addTrack(track, processedStream));
+
+            pc.onicecandidate = e => { if (e.candidate) addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomID, 'participants', targetId, 'candidates'), { candidate: e.candidate.toJSON(), from: currentUser.uid }); };
+            
+            pc.ontrack = e => {
+                let audioEl = document.getElementById(`audio-${targetId}`);
+                if (!audioEl) {
+                    audioEl = document.createElement('audio');
+                    audioEl.id = `audio-${targetId}`;
+                    audioEl.autoplay = true;
+                    audioEl.setAttribute('playsinline', '');
+                    els.audioContainer.appendChild(audioEl);
+                }
+                audioEl.srcObject = e.streams[0];
+                setupRemoteAudioAnalysis(targetId, e.streams[0]);
+            };
+
+            if (isInitiator) pc.createOffer().then(o => pc.setLocalDescription(o)).then(() => {
+                addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomID, 'participants', targetId, 'offers'), { offer: { type: pc.localDescription.type, sdp: pc.localDescription.sdp }, from: currentUser.uid });
+            });
+        }
+
+        async function handleOffer(o, f) { if (!peerConnections[f]) createPeerConnection(f, false); await peerConnections[f].setRemoteDescription(new RTCSessionDescription(o)); const a = await peerConnections[f].createAnswer(); await peerConnections[f].setLocalDescription(a); addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomID, 'participants', f, 'answers'), { answer: { type: a.type, sdp: a.sdp }, from: currentUser.uid }); }
+        async function handleAnswer(a, f) { if (peerConnections[f]) await peerConnections[f].setRemoteDescription(new RTCSessionDescription(a)); }
+        async function handleCandidate(c, f) { if (peerConnections[f]) await peerConnections[f].addIceCandidate(new RTCIceCandidate(c)); }
+
+        // --- UI ---
+        function renderParticipants() {
+            els.participantsGrid.innerHTML = '';
+            els.participantCount.textContent = participantsData.length;
+            participantsData.sort((a, b) => a.joinedAt - b.joinedAt);
+
+            const myData = participantsData.find(p => p.id === currentUser.uid);
+            updateFooterMicState(myData?.isMuted);
+
+            participantsData.forEach(p => {
+                const isMe = p.id === currentUser.uid;
+                const isFirst = p.id === participantsData[0]?.id;
+                const visualId = isMe ? 'local' : p.id;
+                
+                const card = document.createElement('div');
+                const micIcon = p.isMuted ? '<i data-lucide="mic-off" class="w-3.5 h-3.5"></i>' : '<i data-lucide="mic" class="w-3.5 h-3.5"></i>';
+                const micClass = p.isMuted ? 'bg-red-500/20 text-red-500' : 'bg-emerald-500/20 text-emerald-500';
+
+                let volCtrl = '';
+                if (isHost && !isMe) {
+                    const vol = (p.volume !== undefined) ? p.volume : 1.0;
+                    volCtrl = `<div class="w-full px-4 mt-2"><label class="text-[10px] text-slate-400 font-bold">Vol: ${Math.round(vol*100)}%</label><input type="range" min="0" max="1" step="0.1" value="${vol}" onchange="window.updateUserVolume('${p.id}', this.value)"></div>`;
+                }
+
+                card.className = `relative aspect-video rounded-2xl flex flex-col items-center justify-center border-2 transition-all shadow-lg overflow-hidden ${p.isMuted ? 'bg-slate-900 border-slate-800' : 'bg-slate-800 border-indigo-500/30'}`;
+                
+                card.innerHTML = `
+                    ${globalMuteState ? '<div class="absolute top-2 left-2 px-2 py-0.5 bg-red-600/80 text-[10px] font-bold rounded text-white z-10">Silenciado</div>' : ''}
+                    <div id="visual-${visualId}" class="w-16 h-16 rounded-full bg-slate-700 flex items-center justify-center text-2xl font-bold text-indigo-400 mb-1 transition-all duration-75">${(p.name||'?').charAt(0).toUpperCase()}</div>
+                    <div class="text-center z-10 w-full"><div class="font-medium flex items-center justify-center gap-1 text-slate-200">${p.name} ${isMe ? '<span class="text-[10px] bg-slate-700 px-1.5 py-0.5 rounded uppercase font-bold text-slate-300">Tu</span>' : ''} ${isFirst ? '<i data-lucide="crown" class="w-3 h-3 text-yellow-500 ml-1"></i>' : ''}</div>${volCtrl}</div>
+                    <div class="absolute bottom-3 right-3 p-1.5 rounded-full ${micClass}">${micIcon}</div>
+                `;
+                els.participantsGrid.appendChild(card);
+            });
+            lucide.createIcons();
+        }
+
+        function updateFooterMicState(isMuted) {
+            els.toggleMicBtn.className = `p-4 rounded-full transition-all text-white ${isMuted ? 'bg-red-600 hover:bg-red-500' : 'bg-slate-700 hover:bg-slate-600'}`;
+            els.toggleMicBtn.innerHTML = `<i data-lucide="${isMuted ? 'mic-off' : 'mic'}" class="w-6 h-6"></i>`;
+            lucide.createIcons();
+        }
+
+        window.updateUserVolume = async (uid, val) => {
+            if (!currentRoomID) return;
+            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomID, 'participants', uid), { volume: parseFloat(val) });
+        };
+
+        // --- AÇÕES ---
+        async function toggleMyMic() {
+            if (!currentUser || !currentRoomID) return;
+            const myData = participantsData.find(p => p.id === currentUser.uid);
+            if (myData) {
+                const newState = !myData.isMuted;
+                await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomID, 'participants', currentUser.uid), { isMuted: newState });
+            }
+        }
+
+        async function setAllMute(state) {
+            if (!currentUser || !currentRoomID || !isHost) return;
+            await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomID), { allMuted: state });
+            const updates = participantsData.map(p => updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomID, 'participants', p.id), { isMuted: state }));
+            await Promise.all(updates);
+            showToast(state ? "Todos silenciados" : "Microfones liberados");
+        }
+
+        async function leaveCall() {
+            if (confirm("Sair da sala?")) {
+                Object.values(peerConnections).forEach(pc => pc.close()); peerConnections = {};
+                if (localStream) localStream.getTracks().forEach(t => t.stop());
+                try { await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'rooms', currentRoomID, 'participants', currentUser.uid)); } catch(e){}
+                window.location.reload();
+            }
+        }
+
+        // Listeners
+        els.createRoomBtn.addEventListener('click', createRoom);
+        els.joinRoomBtn.addEventListener('click', joinRoomFromInput);
+        els.retryBtn.addEventListener('click', initAuth);
+        els.toggleMicBtn.addEventListener('click', toggleMyMic);
+        els.muteAllBtn.addEventListener('click', () => setAllMute(true));
+        els.unmuteAllBtn.addEventListener('click', () => setAllMute(false));
+        els.leaveBtn.addEventListener('click', leaveCall);
+        els.footerLeaveBtn.addEventListener('click', leaveCall);
+        els.copyLinkBtn.addEventListener('click', () => {
+            if (currentRoomID) {
+                const el = document.createElement('textarea'); el.value = currentRoomID; document.body.appendChild(el); el.select();
+                try { document.execCommand('copy'); showToast("Copiado!"); } catch (err) { showToast("Erro copiar"); }
+                document.body.removeChild(el);
+            }
+        });
+
+        // Drawer Listeners
+        els.openSettingsBtn.addEventListener('click', () => toggleDrawer(true));
+        els.closeDrawerBtn.addEventListener('click', () => toggleDrawer(false));
+        els.drawerOverlay.addEventListener('click', () => toggleDrawer(false));
+
+        lucide.createIcons();
+        initAuth();
+    </script>
+</body>
+</html>
