@@ -108,13 +108,13 @@
                     </div>
                 </div>
                 <div class="space-y-4">
-                    <p class="text-xs text-slate-400">Ajusta a sensibilidade do microfone.</p>
+                    <p class="text-xs text-slate-400">Ajusta a sensibilidade para cortar ruído. Se o áudio falhar, desliza para a esquerda (0).</p>
                     <div class="relative w-full">
-                        <!-- Threshold padrão reduzido para 2 para facilitar captação -->
-                        <input type="range" id="gate-threshold" min="0" max="100" value="2" class="w-full z-20 relative">
+                        <!-- Threshold padrão reduzido para 0 para garantir que áudio passa -->
+                        <input type="range" id="gate-threshold" min="0" max="100" value="0" class="w-full z-20 relative">
                         <div class="meter-container bg-slate-900 border border-slate-700">
                             <div id="audio-meter-bar" class="meter-bar opacity-80"></div>
-                            <div id="threshold-marker" class="threshold-line" style="left: 2%"></div>
+                            <div id="threshold-marker" class="threshold-line" style="left: 0%"></div>
                         </div>
                     </div>
                 </div>
@@ -509,9 +509,13 @@
                 await unlockAudio();
                 if (localStream) localStream.getTracks().forEach(t => t.stop());
 
-                // Removida supressão agressiva para mobile
+                // CONFIGURAÇÃO CRÍTICA PARA MOBILE: Sem supressão agressiva, ganho automático
                 const constraints = {
-                    audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: true },
+                    audio: { 
+                        echoCancellation: true, 
+                        noiseSuppression: false, // Desliga supressão nativa agressiva em mobile
+                        autoGainControl: true    // Tenta aumentar o volume automaticamente
+                    },
                     video: withVideo ? { facingMode: "user" } : false
                 };
 
@@ -531,7 +535,7 @@
 
                 const an = audioContext.createAnalyser(); an.fftSize=512; source.connect(an); audioAnalysers['local']=an;
                 
-                // Forçar speaker sempre que possível
+                // Tenta forçar saída para Speaker sempre que possível
                 if ('setSinkId' in HTMLMediaElement.prototype) await updateAudioOutput();
 
                 return true;
@@ -816,6 +820,7 @@
                 
                 if (p.isVideoOn) {
                     const videoClass = p.isScreenSharing ? 'screen-share' : '';
+                    // Use listener instead of inline onclick to avoid CSP/policy errors
                     const maximizeBtn = `<button data-video-target="video-${p.id}" data-card-target="${cardId}" class="maximize-btn absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-black/70 text-white rounded-lg backdrop-blur-sm transition-all z-20" title="Tela Cheia"><i data-lucide="maximize" class="w-4 h-4"></i></button>`;
                     contentHTML = `<video id="video-${p.id}" autoplay playsinline muted class="absolute inset-0 w-full h-full ${videoClass}"></video>
                     <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
