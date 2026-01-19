@@ -1,8 +1,6 @@
 <!DOCTYPE html>
 <html lang="pt-PT">
 <head>
-<link rel="manifest" href="https://progressier.app/Zvm4n9IvEKSCqMlsuP9J/progressier.json"/>
-<script defer src="https://progressier.app/Zvm4n9IvEKSCqMlsuP9J/script.js"></script>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>VibeCall - Lista de Salas</title>
@@ -110,12 +108,13 @@
                     </div>
                 </div>
                 <div class="space-y-4">
-                    <p class="text-xs text-slate-400">Ajusta para cortar o ruído de fundo.</p>
+                    <p class="text-xs text-slate-400">Ajusta a sensibilidade do microfone.</p>
                     <div class="relative w-full">
-                        <input type="range" id="gate-threshold" min="0" max="100" value="15" class="w-full z-20 relative">
+                        <!-- Threshold padrão reduzido para 2 para facilitar captação -->
+                        <input type="range" id="gate-threshold" min="0" max="100" value="2" class="w-full z-20 relative">
                         <div class="meter-container bg-slate-900 border border-slate-700">
                             <div id="audio-meter-bar" class="meter-bar opacity-80"></div>
-                            <div id="threshold-marker" class="threshold-line" style="left: 15%"></div>
+                            <div id="threshold-marker" class="threshold-line" style="left: 2%"></div>
                         </div>
                     </div>
                 </div>
@@ -235,24 +234,23 @@
 
             <!-- Rodapé Fixo -->
             <div class="fixed bottom-8 left-1/2 -translate-x-1/2 bg-slate-900/90 backdrop-blur-md border border-slate-800 px-8 py-4 rounded-full flex items-center gap-4 shadow-2xl z-40">
-                <button id="speaker-btn" class="hidden p-4 rounded-full transition-all bg-slate-700 hover:bg-slate-600 text-white relative group shadow-lg shadow-indigo-900/20" title="Alternar Viva Voz">
-                    <i data-lucide="volume-2" class="w-6 h-6"></i>
-                </button>
-                <div class="h-8 w-[1px] bg-slate-700 hidden" id="speaker-separator"></div>
-
+                <!-- Botão Toggle Mic -->
                 <button id="toggle-mic-btn" class="p-4 rounded-full transition-all bg-slate-700 hover:bg-slate-600 text-white relative group shadow-lg shadow-indigo-900/20" title="Microfone">
                     <i data-lucide="mic" class="w-6 h-6"></i>
                 </button>
                 
+                <!-- Botão Toggle Video -->
                 <button id="toggle-video-btn" class="p-4 rounded-full transition-all bg-slate-700 hover:bg-slate-600 text-white relative group shadow-lg shadow-indigo-900/20" title="Câmara">
                     <i data-lucide="video-off" class="w-6 h-6"></i>
                 </button>
 
+                <!-- Botão Partilha Ecrã -->
                 <button id="share-screen-btn" class="p-4 rounded-full transition-all bg-slate-700 hover:bg-slate-600 text-white relative group shadow-lg shadow-indigo-900/20" title="Partilhar Ecrã">
                     <i data-lucide="monitor-up" class="w-6 h-6"></i>
                 </button>
 
                 <div class="h-8 w-[1px] bg-slate-700"></div>
+                <!-- Botão Sair -->
                 <button id="footer-leave-btn" class="p-4 bg-red-600 rounded-full hover:bg-red-700 transition-all text-white shadow-lg shadow-red-600/30">
                     <i data-lucide="phone-off" class="w-6 h-6"></i>
                 </button>
@@ -291,7 +289,6 @@
         let currentUserName = '';
         let isHost = false;
         let prevParticipantsCount = 0;
-        let isSpeakerOn = true;
         let currentAudioOutputId = 'default';
         let isScreenSharing = false;
         
@@ -343,8 +340,6 @@
             toggleMicBtn: document.getElementById('toggle-mic-btn'),
             toggleVideoBtn: document.getElementById('toggle-video-btn'),
             shareScreenBtn: document.getElementById('share-screen-btn'),
-            speakerBtn: document.getElementById('speaker-btn'),
-            speakerSeparator: document.getElementById('speaker-separator'),
             toast: document.getElementById('toast'),
             audioContainer: document.getElementById('audio-container'),
             
@@ -505,9 +500,6 @@
                 els.appContainer.classList.remove('hidden'); 
                 els.lobbyView.classList.remove('hidden'); 
                 startLobbyListener(); 
-                if (/Android|iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-                    els.speakerBtn.classList.remove('hidden'); els.speakerSeparator.classList.remove('hidden');
-                }
             }
         });
 
@@ -517,8 +509,9 @@
                 await unlockAudio();
                 if (localStream) localStream.getTracks().forEach(t => t.stop());
 
+                // Removida supressão agressiva para mobile
                 const constraints = {
-                    audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+                    audio: { echoCancellation: true, noiseSuppression: false, autoGainControl: true },
                     video: withVideo ? { facingMode: "user" } : false
                 };
 
@@ -538,10 +531,19 @@
 
                 const an = audioContext.createAnalyser(); an.fftSize=512; source.connect(an); audioAnalysers['local']=an;
                 
-                if (isSpeakerOn && 'setSinkId' in HTMLMediaElement.prototype) await updateAudioOutput();
+                // Forçar speaker sempre que possível
+                if ('setSinkId' in HTMLMediaElement.prototype) await updateAudioOutput();
 
                 return true;
-            } catch (err) { alert("Erro ao acessar dispositivos: "+err.message); return false; }
+            } catch (err) { 
+                console.error("Erro Media:", err);
+                let errorMsg = "Erro ao acessar dispositivos.";
+                if (err.name === 'NotAllowedError' || err.name === 'PermissionDeniedError') {
+                    errorMsg = "🔒 Permissão de Microfone Bloqueada! Ative nas configurações do navegador.";
+                }
+                alert(errorMsg); 
+                return false; 
+            }
         }
 
         function setupRemoteAudioAnalysis(id, stream) {
@@ -589,28 +591,17 @@
                 const devices = await navigator.mediaDevices.enumerateDevices();
                 const audioOutputs = devices.filter(d => d.kind === 'audiooutput');
                 let targetId = 'default';
-                if (isSpeakerOn) {
-                    const speaker = audioOutputs.find(d => d.label.toLowerCase().includes('speaker'));
-                    if (speaker) targetId = speaker.deviceId;
-                }
+                
+                // Procurar sempre por 'speaker' para forçar altifalante
+                const speaker = audioOutputs.find(d => d.label.toLowerCase().includes('speaker'));
+                if (speaker) targetId = speaker.deviceId;
+                
                 currentAudioOutputId = targetId;
                 const audioElements = els.audioContainer.querySelectorAll('audio');
                 for (const audio of audioElements) {
                     if (audio.sinkId !== targetId) await audio.setSinkId(targetId).catch(e => console.warn("Failed to set sinkId", e));
                 }
             } catch(e) { console.error("Error updating audio output:", e); }
-        }
-
-        async function toggleSpeaker() {
-            isSpeakerOn = !isSpeakerOn;
-            const icon = isSpeakerOn ? 'volume-2' : 'phone';
-            els.speakerBtn.innerHTML = `<i data-lucide="${icon}" class="w-6 h-6"></i>`;
-            if ('setSinkId' in HTMLMediaElement.prototype) {
-                await updateAudioOutput(); showToast(isSpeakerOn ? "Viva Voz Ativo" : "Auricular Ativo");
-            } else if (/iPhone|iPad|iPod/i.test(navigator.userAgent)) {
-                alert("No iPhone/iPad, por favor usa o Centro de Controlo ou clica no ícone de AirPlay/Som para alterar a saída.");
-            } else { showToast("Funcionalidade não suportada neste browser."); }
-            lucide.createIcons();
         }
 
         // --- SCREEN SHARING ---
@@ -825,7 +816,6 @@
                 
                 if (p.isVideoOn) {
                     const videoClass = p.isScreenSharing ? 'screen-share' : '';
-                    // Use listener instead of inline onclick to avoid CSP/policy errors
                     const maximizeBtn = `<button data-video-target="video-${p.id}" data-card-target="${cardId}" class="maximize-btn absolute top-2 right-2 p-1.5 bg-black/50 hover:bg-black/70 text-white rounded-lg backdrop-blur-sm transition-all z-20" title="Tela Cheia"><i data-lucide="maximize" class="w-4 h-4"></i></button>`;
                     contentHTML = `<video id="video-${p.id}" autoplay playsinline muted class="absolute inset-0 w-full h-full ${videoClass}"></video>
                     <div class="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent"></div>
@@ -910,7 +900,6 @@
             }
         });
         document.getElementById('clean-rooms-btn').addEventListener('click', cleanGhostRooms);
-        els.speakerBtn.addEventListener('click', toggleSpeaker);
         
         // Event delegation for Maximize buttons to avoid inline event policy errors
         els.participantsGrid.addEventListener('click', (e) => {
